@@ -1,0 +1,13 @@
+# In case run is duplicated, use newer
+RUN:  10, Episodes:  50000, Discount: 0.40, Learning-rate: 0.10, Spaces:  40, Eps-init: 0.5000, Eps-end: 0.0050, Eps-decay-at:  12500
+RUN:  11, Episodes:  50000, Discount: 0.40, Learning-rate: 0.30, Spaces:  40, Eps-init: 0.5000, Eps-end: 0.0050, Eps-decay-at:  25000
+RUN:  12, Episodes:  50000, Discount: 1.00, Learning-rate: 0.15, Spaces:  35, Eps-init: 0.4000, Eps-end: 0.0050, Eps-decay-at:  25000
+RUN:  13, Episodes:  50000, Discount: 1.00, Learning-rate: 0.15, Spaces:  25, Eps-init: 0.1000, Eps-end: 0.0050, Eps-decay-at:  25000
+RUN:  14, Episodes:  50000, Discount: 0.70, Learning-rate: 0.20, Spaces:  20, Eps-init: 0.1000, Eps-end: 0.0050, Eps-decay-at:  25000
+RUN:  15, Episodes:  50000, Discount: 0.50, Learning-rate: 0.05, Spaces:  40, Eps-init: 0.6000, Eps-end: 0.0050, Eps-decay-at:  25000
+RUN:  16, Episodes:  50000, Discount: 1.10, Learning-rate: 0.15, Spaces:  40, Eps-init: 0.6000, Eps-end: 0.0050, Eps-decay-at:  25000
+RUN:  17, Episodes:  50000, Discount: 1.10, Learning-rate: 0.40, Spaces:  40, Eps-init: 0.4500, Eps-end: 0.0500, Eps-decay-at:  25000
+RUN:  18, Episodes:  50000, Discount: 1.10, Learning-rate: 0.20, Spaces:  40, Eps-init: 0.4500, Eps-end: 0.0100, Eps-decay-at:  25000
+RUN:  19, Episodes:  50000, Discount: 1.15, Learning-rate: 0.10, Spaces:  40, Eps-init: 0.5000, Eps-end: 0.0100, Eps-decay-at:  25000
+
+RUN:  20, Episodes:  50000, Discount: 1.00, Learning-rate: 0.05, Spaces:  40, Eps-init: 0.3000, Eps-end: 0.0050, Eps-decay-at:  25000, Timeframe:   2000, Eps-toggle:   True

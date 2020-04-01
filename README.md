@@ -1,19 +1,9 @@
 # Readme - GymTrain
 
-#### Tensorflow
-Basic reinforced problems
+#### Target
+Use various technologies
 
-## Cart Pole
-- [ ] learn agent to play game
+#### Current Scopes:
+[Q-learning with sentdex](gym-train/sentdex/q-learning)
 
-## Mountain Car game
-- [ ] optimize model, reward, make model faster
-	- [x] learn agent to play and win game
-
-## Snake
-- [ ] learn agent to play game
-
-# Next
-	? Cards98 
-	? R-Learning
-	? Q(λ)-Learing
+#### Finished with results

@@ -4,7 +4,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+gym-train/sentdex/q-learning/qtables*
+gym-train/sentdex/q-learning/*.mp4
+gym-train/sentdex/q-learning/*.avi
 # C extensions
 *.so
 
