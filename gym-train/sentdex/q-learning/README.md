@@ -38,10 +38,15 @@ Fixed parameters also fixed learning curve.
 ![Compare1](Compare-16-17-18-19.png)
 
 
-### Q-table changing over time
+### Q-table changing over time (videos)
 
-Will be posted here...
+Good run 16:
 
+[![thumbnail](http://img.youtube.com/vi/93LEnFN1phs/0.jpg)](https://www.youtube.com/watch?v=93LEnFN1phs)
+
+Bad run 11:
+
+[![thumbnail](http://img.youtube.com/vi/AXFMH06SnAI/0.jpg)](https://www.youtube.com/watch?v=AXFMH06SnAI)
 
 ### Conclusion. Which one is the best?
 Depends on the criteria, we can select from this three values:
