@@ -1,5 +1,12 @@
 # Readme - GymTrain
 
+# Python 
+conda create -n gym tensorflow-gpu
+conda activate gym
+pip install -r requirements.txt
+
+
+
 #### Target
 Use various technologies
 
