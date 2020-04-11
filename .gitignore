@@ -1,4 +1,7 @@
 *.idea
+*.npy
+*PetImages*
+*fruits-360_dataset*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
