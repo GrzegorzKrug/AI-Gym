@@ -1,6 +1,6 @@
 # Readme - GymTrain
 
-# Python 
+# Python 3.7.7
 conda create -n gym tensorflow-gpu
 conda activate gym
 pip install -r requirements.txt
