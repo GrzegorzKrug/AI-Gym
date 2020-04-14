@@ -18,8 +18,11 @@ Layers used in model:
 Data set contains around
 * 40k training images
 * 20k test images
+Each images is 100x100 pixels in 3 colors RGB
 
+#
 1. Out of memory
+
   Normalization made on each image consumes more memory, due to conversion of floating point number. It is necessary, without normalization training takes way more time, in my example I trained it for 10 epochs and accuracy was still at 30-40%
 
 #
