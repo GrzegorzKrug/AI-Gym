@@ -23,11 +23,13 @@ Each images is 100x100 pixels in 3 colors RGB
 #
 1. Out of memory
 
-  Normalization made on each image consumes more memory, due to conversion of floating point number. It is necessary, without normalization training takes way more time, in my example I trained it for 10 epochs and accuracy was still at 30-40%
+  Normalization made on each image consumes more memory, due to conversion to floating point number. Normalization is necessary, without it training takes way more time, in my example I trained it for 10 epochs and accuracy was still at 30-40%
+
+**Solution**: Images are already small enough, there are only 2 solutions, load less images, or reduce number precision.
 
 #
 ### Fruits classification - First run
-
+No conversion at all
 * Using 15% only of training samples
 * Using 15% only of test samples
 
