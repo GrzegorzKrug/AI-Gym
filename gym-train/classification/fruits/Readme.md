@@ -18,7 +18,8 @@ Layers used in model:
 Data set contains around
 * 40k training images
 * 20k test images
-Each images is 100x100 pixels in 3 colors RGB
+
+Each image is 100x100 pixels in 3 colors RGB
 
 #
 1. Out of memory
