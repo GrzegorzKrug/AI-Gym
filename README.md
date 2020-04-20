@@ -15,6 +15,7 @@ Use and learn various technologies and techniques in areas:
 
 3. [Fruits in RGB classification](gym-train/classification/fruits)
 
+4. [Deep Q-learning mountain Cart](gym-train/sentdex/deep-qlearning)
 ### Environment setup
 `Python 3.7.7`
 ```
@@ -25,8 +26,7 @@ pip install -r requirements.txt
 
 
 #### Current Scopes:
-
-* Deep q-learning with tensorflow
+* None
 
 
 
