@@ -199,33 +199,6 @@ class Agent:
                        verbose=0, shuffle=False, epochs=1)
 
 
-# EPOCHS = settings.EPOCHS
-# SIM_COUNT = settings.SIM_COUNT
-#
-# REPLAY_MEMORY_SIZE = settings.REPLAY_MEMORY_SIZE
-# MIN_BATCH_SIZE = settings.MIN_BATCH_SIZE
-# MAX_BATCH_SIZE = settings.MAX_BATCH_SIZE
-#
-# DISCOUNT = settings.DISCOUNT
-# AGENT_LR = settings.AGENT_LR
-# FREE_MOVE = settings.FREE_MOVE
-#
-# MODEL_NAME = settings.MODEL_NAME
-# LOAD_MODEL = settings.LOAD_MODEL
-# ALLOW_TRAIN = settings.ALLOW_TRAIN
-# SAVE_PICS = settings.SAVE_PICS
-#
-# STATE_OFFSET = settings.STATE_OFFSET
-# FIRST_EPS = settings.FIRST_EPS
-# RAMP_EPS = settings.RAMP_EPS
-# INITIAL_SMALL_EPS = settings.INITIAL_SMALL_EPS
-# END_EPS = settings.END_EPS
-# EPS_INTERVAL = settings.EPS_INTERVAL
-#
-# SHOW_EVERY = settings.SHOW_EVERY
-# RENDER_DELAY = settings.RENDER_DELAY
-
-
 def training():
     try:
         episode_offset = np.load(f"{settings.MODEL_NAME}/last-episode-num.npy", allow_pickle=True)
@@ -243,8 +216,6 @@ def training():
                 if not (episode + episode_offset) % 100 and episode > 0:
                     agent.save_model()
                     np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
-
-            Pred_sep.append(len(Predicts[0]))
 
             if not (episode + episode_offset) % settings.SHOW_EVERY:
                 render = True
@@ -463,14 +434,11 @@ if __name__ == "__main__":
     config.gpu_options.per_process_gpu_memory_fraction = 0.3
     sess = tf.compat.v1.Session(config=config)
 
-    os.makedirs(MODEL_NAME, exist_ok=True)
+    os.makedirs(settings.MODEL_NAME, exist_ok=True)
 
     "Environment"
     ACTIONS = 4  # Turn left, right or none
-    INPUT_SHAPE = None
-
-    Predicts = [[], [], [], []]
-    Pred_sep = []
+    INPUT_SHAPE = (2, )
 
     stats = {
             "episode": [],
@@ -479,12 +447,12 @@ if __name__ == "__main__":
             "food_eaten": [],
             "moves": []}
 
-    agent = Agent(min_batch_size=MIN_BATCH_SIZE,
-                  max_batch_size=MAX_BATCH_SIZE,
+    agent = Agent(min_batch_size=settings.MIN_BATCH_SIZE,
+                  max_batch_size=settings.MAX_BATCH_SIZE,
                   input_shape=INPUT_SHAPE,
                   action_space=ACTIONS,
-                  memory_size=REPLAY_MEMORY_SIZE,
-                  learining_rate=AGENT_LR,
+                  memory_size=settings.REPLAY_MEMORY_SIZE,
+                  learining_rate=settings.AGENT_LR,
                   dual_input=settings.DUAL_INPUT)
 
     training()
