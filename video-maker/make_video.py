@@ -2,7 +2,7 @@ import cv2
 import os
 import re
 
-VID_SIZE = (1600, 900)
+VID_SIZE = (750, 750)
 
 
 def make_video(dir_path, file_list, video_size):
