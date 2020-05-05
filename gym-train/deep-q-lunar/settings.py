@@ -1,0 +1,41 @@
+
+
+SIM_COUNT = 10
+EPOCHS = 100
+TIMEOUT = 200
+TRAIN_MAX_MIN_DURATION = 30
+
+SHOW_EVERY = 500
+RENDER_DELAY = 0.02
+
+REPLAY_MEMORY_SIZE = 5 * 200 * SIM_COUNT  # 10 full games 3k each
+MIN_BATCH_SIZE = 10
+MAX_BATCH_SIZE = 1000
+
+# Training method
+ALLOW_TRAIN = True
+STEP_TRAINING = True
+
+model = "StepModel" if STEP_TRAINING else "EpochModel"
+MODEL_NAME = f"{model}-1--MB_{MIN_BATCH_SIZE}"
+
+# Training params
+DISCOUNT = 0.9
+AGENT_LR = 1e-4
+FIRST_EPS = 0.3
+RAMP_EPS = 0.3
+INITIAL_SMALL_EPS = 0.05
+END_EPS = 0
+EPS_INTERVAL = 50
+
+# Settings
+SAVE_PICS = ALLOW_TRAIN
+LOAD_MODEL = True
+FREE_MOVE = False
+SHOW_LAST = False
+# PLOT_ALL_QS = True
+# PLOT_FIRST_QS = False
+# COMBINE_QS = True
+SOUND_ALERT = True
+
+
