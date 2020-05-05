@@ -26,7 +26,7 @@ pip install -r requirements.txt
 
 
 #### Current Scopes:
-* None
+* LunarLanderContinuous-v2 
 
 
 
