@@ -13,9 +13,8 @@ MIN_BATCH_SIZE = 10
 MAX_BATCH_SIZE = 1000
 
 # Training method
-ALLOW_TRAIN = False
+ALLOW_TRAIN = True
 STEP_TRAINING = True
-DUAL_INPUT = False
 
 model = "StepModel" if STEP_TRAINING else "EpochModel"
 MODEL_NAME = f"{model}-1--MB_{MIN_BATCH_SIZE}"

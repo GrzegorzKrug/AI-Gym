@@ -22,181 +22,166 @@ class Agent:
     def __init__(self,
                  input_shape,
                  action_space,
-                 dual_input=False,
-                 min_batch_size=1000,
-                 max_batch_size=1000,
-                 learining_rate=0.0001,
-                 memory_size=10000):
+                 alpha,
+                 beta,
+                 gamma=0.99):
 
         dt = datetime.datetime.timetuple(datetime.datetime.now())
         self.runtime_name = f"{dt.tm_mon:>02}-{dt.tm_mday:>02}--" \
                             f"{dt.tm_hour:>02}-{dt.tm_min:>02}-{dt.tm_sec:>02}"
 
-        self.min_batch_size = min_batch_size
-        self.max_batch_size = max_batch_size
         self.input_shape = input_shape
         self.action_space = action_space
-        self.learning_rate = learining_rate
-        self.memory = deque(maxlen=memory_size)
-        load_success = self.load_model()
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
 
-        # Bind train command
-        self._train = self._dual_train if settings.DUAL_INPUT else self._normal_train
+        # load_success = self.load_model()
+        load_success = False
 
-        if load_success:
-            print(f"Loading model: {settings.MODEL_NAME}")
-        else:
-            print(f"New model: {settings.MODEL_NAME}")
-            if dual_input:
-                self.model = self.create_dual_model()
-            else:
-                self.model = self.create_normal_model()
+        print(f"New model: {settings.MODEL_NAME}")
+        self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
-        self.model.compile(optimizer=Adam(lr=self.learning_rate),
-                           loss='mse',
-                           metrics=['accuracy'])
-        backend.set_value(self.model.optimizer.lr, self.learning_rate)
-        self.model.summary()
+    def create_actor_critic_network(self):
+        input = Input(shape=self.input_shape)
+        delta = Input(shape=[1])
 
-    def create_dual_model(self):
-        input_area = Input(shape=(self.input_shape[0]))
-        layer1a = Dense(64, activation='relu')(input_area)
+        dense1 = Dense(256, activation='relu')(input)
+        dense2 = Dense(256, activation='relu')(dense1)
 
-        input_direction = Input(shape=(self.input_shape[1]))
-        layer2a = Dense(32, activation='relu')(input_direction)
-        merge_layer = concatenate([layer1a, layer2a], axis=-1)
+        probs = Dense(self.action_space, activation='softmax')(dense2)
+        values = Dense(1, activation='linear')(dense2)
 
-        layer3 = Dense(64, activation='relu')(merge_layer)
-        output = Dense(self.action_space, activation='linear')(layer3)
+        def custom_loss(y_true, y_pred):
+            out = backend.clip(y_pred, 1e-8, 1 - 1e-8)
+            log_lik = y_true * backend.log(out)
 
-        model = Model(inputs=[input_area, input_direction], outputs=output)
+            return backend.sum(-log_lik * delta)
 
-        plot_model(model, f"{settings.MODEL_NAME}/model.png")
-        with open(f"{settings.MODEL_NAME}/model_summary.txt", 'w') as file:
-            model.summary(print_fn=lambda x: file.write(x + '\n'))
+        actor = Model(inputs=[input, delta], outputs=[probs])
+        actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
 
-        return model
+        critic = Model(inputs=[input], outputs=[values])
+        critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
 
-    def create_normal_model(self):
-        model = Sequential()
-        model.add(Dense(128, input_shape=self.input_shape, activation='relu'))
-        model.add(Dropout(0.2))
-        model.add(Dense(128, activation='relu'))
-        model.add(Dense(self.action_space, activation='linear'))
+        policy = Model(inputs=[input], outputs=[probs])
 
-        plot_model(model, f"{settings.MODEL_NAME}/model.png")
-        with open(f"{settings.MODEL_NAME}/model_summary.txt", 'w') as file:
-            model.summary(print_fn=lambda x: file.write(x + '\n'))
+        plot_model(actor, f"{settings.MODEL_NAME}/actor.png")
+        plot_model(critic, f"{settings.MODEL_NAME}/critic.png")
+        plot_model(policy, f"{settings.MODEL_NAME}/policy.png")
 
-        return model
+        with open(f"{settings.MODEL_NAME}/actor-summary.txt", 'w') as file:
+            actor.summary(print_fn=lambda x: file.write(x + '\n'))
+        with open(f"{settings.MODEL_NAME}/critic-summary.txt", 'w') as file:
+            critic.summary(print_fn=lambda x: file.write(x + '\n'))
+        with open(f"{settings.MODEL_NAME}/policy-summary.txt", 'w') as file:
+            policy.summary(print_fn=lambda x: file.write(x + '\n'))
 
-    def update_memory(self, state):
-        self.memory.append(state)
+        return actor, critic, policy
 
     def save_model(self):
         while True:
             try:
-                self.model.save(f"{settings.MODEL_NAME}/model")
-                return True
+                self.actor.save(f"{settings.MODEL_NAME}/actor")
+                break
+            except OSError:
+                time.sleep(0.2)
+        while True:
+            try:
+                self.critic.save(f"{settings.MODEL_NAME}/critic")
+                break
             except OSError:
                 time.sleep(0.2)
 
+        while True:
+            try:
+                self.policy.save(f"{settings.MODEL_NAME}/policy")
+                break
+            except OSError:
+                time.sleep(0.2)
+
+        return True
+
+    def choose_action(self, observation):
+
+        state = observation
+        probabilities = self.policy.predict(state)
+        action = np.random.choice(self.action_space, p=probabilities)
+        return action
+
     def load_model(self):
-        if os.path.isfile(f"{settings.MODEL_NAME}/model"):
+        if os.path.isfile(f"{settings.MODEL_NAME}/actor") and \
+                os.path.isfile(f"{settings.MODEL_NAME}/critic") and \
+                os.path.isfile(f"{settings.MODEL_NAME}/policy"):
             while True:
                 try:
-                    self.model = load_model(f"{settings.MODEL_NAME}/model")
-                    return True
+                    self.actor = load_model(f"{settings.MODEL_NAME}/actor")
+                    break
                 except OSError:
                     time.sleep(0.2)
+
+            while True:
+                try:
+                    self.critic = load_model(f"{settings.MODEL_NAME}/critic")
+                    break
+                except OSError:
+                    time.sleep(0.2)
+
+            while True:
+                try:
+                    self.policy = load_model(f"{settings.MODEL_NAME}/policy")
+                    break
+                except OSError:
+                    time.sleep(0.2)
+            return True
+
         else:
             return False
 
-    def train(self):
-        if len(self.memory) < self.min_batch_size:
-            return None
-        elif settings.TRAIN_ALL_SAMPLES:
-            train_data = list(self.memory)
-        elif len(self.memory) >= self.max_batch_size:
-            train_data = random.sample(self.memory, self.max_batch_size)
-            # print(f"Too much data, selecting from: {len(self.memory)} samples")
-        else:
-            train_data = list(self.memory)
+    def train(self, train_data):
+        self.actor_critic_train(train_data)
 
-        if settings.STEP_TRAINING or settings.TRAIN_ALL_SAMPLES:
-            self.memory.clear()
+    #     if len(self.memory) < self.min_batch_size:
+    #         return None
+    #     elif settings.TRAIN_ALL_SAMPLES:
+    #         train_data = list(self.memory)
+    #     elif len(self.memory) >= self.max_batch_size:
+    #         train_data = random.sample(self.memory, self.max_batch_size)
+    #         # print(f"Too much data, selecting from: {len(self.memory)} samples")
+    #     else:
+    #         train_data = list(self.memory)
+    #
+    #     if settings.STEP_TRAINING or settings.TRAIN_ALL_SAMPLES:
+    #         self.memory.clear()
+    #
+    #     self._normal_train(train_data)
 
-        self._train(train_data)
-
-    def _normal_train(self, train_data):
+    def actor_critic_train(self, train_data):
         Old_states = []
         New_states = []
         Rewards = []
         Dones = []
         Actions = []
 
-        for old_state, new_state, reward, action, done in train_data:
+        for old_state, action, reward, new_state, done in train_data:
             Old_states.append(old_state)
             New_states.append(new_state)
             Actions.append(action)
             Rewards.append(reward)
             Dones.append(done)
 
-        Old_states = np.array(Old_states)
-        New_states = np.array(New_states)
-        old_qs = self.model.predict(Old_states)
-        new_qs = self.model.predict(New_states)
+        current_critic_value = self.critic.predict(Old_states)
+        future_critic_values = self.critic.predict((New_states))
 
-        for old_q, new_q, rew, act, done in zip(old_qs, new_qs, Rewards, Actions, Dones):
-            if done:
-                old_q[act] = rew
-            else:
-                future_best_val = np.max(new_q)
-                old_q[act] = rew + settings.DISCOUNT * future_best_val
+        target = Rewards + self.gamma * Dones * future_critic_values
+        delta = target - current_critic_value
 
-        self.model.fit(Old_states, old_qs,
-                       verbose=0, shuffle=False, epochs=1)
+        Target_Actions = np.zeros(len(train_data), self.action_space)
+        for act_ind, action in enumerate(Actions):
+            Target_Actions[act_ind, action] = 1.0
 
-    def _dual_train(self, train_data):
-        Old_states = []
-        New_states = []
-        Rewards = []
-        Dones = []
-        Actions = []
-
-        for old_state, new_state, reward, action, done in train_data:
-            Old_states.append(old_state)
-            New_states.append(new_state)
-            Actions.append(action)
-            Rewards.append(reward)
-            Dones.append(done)
-
-        Old_states = np.array(Old_states)
-        New_states = np.array(New_states)
-
-        old_view_area = []
-        old_direction = []
-        new_view_area = []
-        new_direction = []
-
-        for _old_state, _new_state in zip(Old_states, New_states):
-            old_view_area.append(_old_state[0])
-            old_direction.append(_old_state[1])
-            new_view_area.append(_new_state[0])
-            new_direction.append(_new_state[1])
-
-        old_qs = self.model.predict([old_view_area, old_direction])
-        new_qs = self.model.predict([new_view_area, new_direction])
-
-        for old_q, new_q, rew, act, done in zip(old_qs, new_qs, Rewards, Actions, Dones):
-            if done:
-                old_q[act] = rew
-            else:
-                future_best_val = np.max(new_q)
-                old_q[act] = rew + settings.DISCOUNT * future_best_val
-
-        self.model.fit([old_view_area, old_direction], old_qs,
-                       verbose=0, shuffle=False, epochs=1)
+        self.actor.fit([Old_states, Target_Actions], Target_Actions, verbose=0)
+        self.critic.fit(Old_states, target, verbose=0)
 
 
 def training():
@@ -211,12 +196,6 @@ def training():
 
     for episode in range(0, settings.EPOCHS):
         try:
-            if not settings.STEP_TRAINING and settings.ALLOW_TRAIN:
-                agent.train()
-                if not (episode + episode_offset) % 100 and episode > 0:
-                    agent.save_model()
-                    np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
-
             if not (episode + episode_offset) % settings.SHOW_EVERY:
                 render = True
             else:
@@ -249,50 +228,38 @@ def training():
                 Games.append(game)
                 States.append(state)
 
-            Dones = [False] * len(Games)
             Scores = [0] * len(Games)
             step = 0
             All_score = []
             All_steps = []
-            while len(Games):
-                if settings.STEP_TRAINING and settings.ALLOW_TRAIN:
-                    agent.train()
-                    if not (episode + episode_offset) % 100 and episode > 0:
-                        agent.save_model()
-                        np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
 
+            while len(Games):
                 step += 1
                 Old_states = np.array(States)
 
-                if eps > np.random.random():
-                    Actions = [game.random_action() for game in Games]
-                else:
-                    Predictions = agent.model.predict(Old_states)
-
-                    Actions = np.argmax(Predictions, axis=1)
-                    Actions = [(0, 0) for game in Games]
-                    # if settings.PLOT_FIRST_QS:
-                    #     Predicts[0].append(Actions[0])
-                    #     Predicts[1].append(Predictions[0][Actions[0]])
-                    # elif PLOT_ALL_QS:
-                    #     for predict in Predictions:
-                    #         Predicts[0].append(predict[0])
-                    #         Predicts[1].append(predict[1])
-                    #         Predicts[2].append(predict[2])
-                    #         Predicts[3].append(predict[3])
-
+                Actions = agent.choose_action(Old_states)
+                Dones = []
+                Rewards = []
                 States = []
-                assert len(Games) == len(Dones)
+
                 for g_index, game in enumerate(Games):
-                    state, reward, done, _ = game.step(action=Actions[g_index])
-                    agent.update_memory((Old_states[g_index], state, reward, Actions[g_index], done))
+                    state, reward, done, info = game.step(action=Actions[g_index])
+                    # agent.update_memory((Old_states[g_index], state, reward, Actions[g_index], done))
+                    Rewards.append(reward)
                     Scores[g_index] += reward
-                    Dones[g_index] = done
+                    Dones.append(done)
                     States.append(state)
 
                 # if render:
                 #     Games[0].render()
                 #     time.sleep(settings.RENDER_DELAY)
+
+                if settings.STEP_TRAINING and settings.ALLOW_TRAIN:
+                    train_data = (Old_states, Actions, Rewards, States)
+                    agent.train(train_data)
+                    if not (episode + episode_offset) % 100 and episode > 0:
+                        agent.save_model()
+                        np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
 
                 for ind_d in range(len(Games) - 1, -1, -1):
                     if Dones[ind_d]:
@@ -311,7 +278,7 @@ def training():
                         Scores.pop(ind_d)
                         Games.pop(ind_d)
                         States.pop(ind_d)
-                        Dones.pop(ind_d)
+
         except KeyboardInterrupt:
             emergency_break = True
 
@@ -342,7 +309,7 @@ def moving_average(array, window_size=None):
 
     if window_size > 1000:
         window_size = 1000
-        
+
     elif window_size < 1:
         window_size = 1
 
@@ -431,7 +398,7 @@ if __name__ == "__main__":
     os.makedirs(settings.MODEL_NAME, exist_ok=True)
 
     "Environment"
-    ACTIONS = 4  # Turn left, right or none
+    ACTION_SPACE = 4  # Turn left, right or none
     INPUT_SHAPE = (8,)
 
     stats = {
@@ -440,13 +407,8 @@ if __name__ == "__main__":
             "score": [],
             "flighttime": []}
 
-    agent = Agent(min_batch_size=settings.MIN_BATCH_SIZE,
-                  max_batch_size=settings.MAX_BATCH_SIZE,
+    agent = Agent(alpha=1e-5, beta=3e-6, gamma=0.99,
                   input_shape=INPUT_SHAPE,
-                  action_space=ACTIONS,
-                  memory_size=settings.REPLAY_MEMORY_SIZE,
-                  learining_rate=settings.AGENT_LR,
-                  dual_input=settings.DUAL_INPUT)
-
+                  action_space=ACTION_SPACE)
     training()
     plot_results()
