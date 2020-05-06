@@ -5,8 +5,8 @@ import settings
 import datetime
 import random
 import keras
-
 import time
+import gym
 import os
 
 from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, Input, concatenate
@@ -244,8 +244,7 @@ def training():
             Games = []  # Close screen
             States = []
             for loop_ind in range(settings.SIM_COUNT):
-                game = None
-
+                game = gym.make('LunarLanderContinuous-v2')
                 state = game.reset()
                 Games.append(game)
                 States.append(state)
@@ -268,19 +267,10 @@ def training():
                 if eps > np.random.random():
                     Actions = [game.random_action() for game in Games]
                 else:
-
-                    if settings.DUAL_INPUT:
-                        old_view_area = []
-                        old_directions = []
-                        for _old_state in Old_states:
-                            old_view_area.append(_old_state[0])
-                            old_directions.append(_old_state[1])
-
-                        Predictions = agent.model.predict([old_view_area, old_directions])
-                    else:
-                        Predictions = agent.model.predict(Old_states)
+                    Predictions = agent.model.predict(Old_states)
 
                     Actions = np.argmax(Predictions, axis=1)
+                    Actions = [(0, 0) for game in Games]
                     # if settings.PLOT_FIRST_QS:
                     #     Predicts[0].append(Actions[0])
                     #     Predicts[1].append(Predictions[0][Actions[0]])
@@ -294,20 +284,21 @@ def training():
                 States = []
                 assert len(Games) == len(Dones)
                 for g_index, game in enumerate(Games):
-                    state, reward, done = game.step(action=Actions[g_index])
+                    state, reward, done, _ = game.step(action=Actions[g_index])
                     agent.update_memory((Old_states[g_index], state, reward, Actions[g_index], done))
                     Scores[g_index] += reward
                     Dones[g_index] = done
                     States.append(state)
 
-                if render:
-                    Games[0].draw(episode+episode_offset)
-                    time.sleep(settings.RENDER_DELAY)
+                # if render:
+                #     Games[0].render()
+                #     time.sleep(settings.RENDER_DELAY)
 
                 for ind_d in range(len(Games) - 1, -1, -1):
                     if Dones[ind_d]:
                         if ind_d == 0 and render:
                             render = False
+                            Games[0].close()
 
                         All_score.append(Scores[ind_d])
                         All_steps.append(step)
@@ -315,8 +306,7 @@ def training():
                         stats['episode'].append(episode + episode_offset)
                         stats['eps'].append(eps)
                         stats['score'].append(Scores[ind_d])
-                        stats['food_eaten'].append(Games[ind_d].food_eaten)
-                        stats['moves'].append(step)
+                        stats['flighttime'].append(step)
 
                         Scores.pop(ind_d)
                         Games.pop(ind_d)
@@ -348,16 +338,20 @@ def training():
 def moving_average(array, window_size=None):
     size = len(array)
     if not window_size or window_size and size > window_size:
-        window_size = size // 10
+        window_size = size // 20
 
     if window_size > 1000:
         window_size = 1000
+        
+    elif window_size < 1:
+        window_size = 1
 
     output = []
-    for sample_num, arr_element in enumerate(array):
-        arr_slice = array[sample_num-window_size:sample_num]
+    for sample_num, _ in enumerate(array):
+        arr_slice = array[sample_num - window_size + 1:sample_num + 1]
         if len(arr_slice) < window_size:
-            output.append(np.mean(array[0:sample_num+1]))
+            output.append(np.mean(array[0:sample_num + 1]))
+            # print(sample_num, array[0:sample_num+1], np.mean(array[0:sample_num+1]))
         else:
             output.append(
                     np.mean(arr_slice)
@@ -371,8 +365,8 @@ def plot_results():
     plt.figure(figsize=(20, 11))
 
     plt.subplot(411)
-    effectiveness = [food / moves for food, moves in zip(stats['food_eaten'], stats['moves'])]
-    plt.scatter(stats['episode'], effectiveness, label='Effectiveness', color='b', marker='s', s=10, alpha=0.5)
+    effectiveness = [score / moves for score, moves in zip(stats['score'], stats['flighttime'])]
+    plt.scatter(stats['episode'], effectiveness, label='Effectiveness', color='b', marker='o', s=10, alpha=0.5)
     plt.plot(stats['episode'], moving_average(effectiveness), label='Average', linewidth=3)
     plt.xlabel("Epoch")
     plt.subplots_adjust(hspace=0.3)
@@ -382,16 +376,16 @@ def plot_results():
     plt.suptitle(f"{settings.MODEL_NAME}\nStats")
     plt.scatter(
             np.array(stats['episode']),
-            stats['food_eaten'],
-            alpha=0.2, marker='s', c='b', s=10, label="Food_eaten"
+            stats['score'],
+            alpha=0.2, marker='s', c='b', s=10, label="Score"
     )
 
-    plt.plot(stats['episode'], moving_average(stats['food_eaten']), label='Average', linewidth=3)
+    plt.plot(stats['episode'], moving_average(stats['score']), label='Average', linewidth=3)
     plt.legend(loc=2)
 
     plt.subplot(413)
-    plt.scatter(stats['episode'], stats['moves'], label='Moves', color='b', marker='.', s=10, alpha=0.5)
-    plt.plot(stats['episode'], moving_average(stats['moves']), label='Average', linewidth=3)
+    plt.scatter(stats['episode'], stats['flighttime'], label='Flight-time', color='b', marker='o', s=10, alpha=0.5)
+    plt.plot(stats['episode'], moving_average(stats['flighttime']), label='Average', linewidth=3)
     plt.legend(loc=2)
 
     plt.subplot(414)
@@ -438,14 +432,13 @@ if __name__ == "__main__":
 
     "Environment"
     ACTIONS = 4  # Turn left, right or none
-    INPUT_SHAPE = (2, )
+    INPUT_SHAPE = (8,)
 
     stats = {
             "episode": [],
             "eps": [],
             "score": [],
-            "food_eaten": [],
-            "moves": []}
+            "flighttime": []}
 
     agent = Agent(min_batch_size=settings.MIN_BATCH_SIZE,
                   max_batch_size=settings.MAX_BATCH_SIZE,
