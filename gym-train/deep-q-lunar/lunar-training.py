@@ -36,15 +36,18 @@ class Agent:
         self.beta = beta
         self.gamma = gamma
 
-        # load_success = self.load_model()
-        load_success = False
-
-        print(f"New model: {settings.MODEL_NAME}")
-        self.actor, self.critic, self.policy = self.create_actor_critic_network()
+        if settings.LOAD_MODEL:
+            load_success = self.load_model()
+            print(f"Loaded model: {settings.MODEL_NAME}")
+        else:
+            load_success = False
+        if not load_success:
+            print(f"New model: {settings.MODEL_NAME}")
+            self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
     def create_actor_critic_network(self):
         input = Input(shape=self.input_shape)
-        delta = Input(shape=[1])
+        delta = Input(shape=(1,))
 
         dense1 = Dense(256, activation='relu')(input)
         dense2 = Dense(256, activation='relu')(dense1)
@@ -66,15 +69,17 @@ class Agent:
 
         policy = Model(inputs=[input], outputs=[probs])
 
-        plot_model(actor, f"{settings.MODEL_NAME}/actor.png")
-        plot_model(critic, f"{settings.MODEL_NAME}/critic.png")
-        plot_model(policy, f"{settings.MODEL_NAME}/policy.png")
+        os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
 
-        with open(f"{settings.MODEL_NAME}/actor-summary.txt", 'w') as file:
+        plot_model(actor, f"{settings.MODEL_NAME}/model/actor.png")
+        plot_model(critic, f"{settings.MODEL_NAME}/model/critic.png")
+        plot_model(policy, f"{settings.MODEL_NAME}/model/policy.png")
+
+        with open(f"{settings.MODEL_NAME}/model/actor-summary.txt", 'w') as file:
             actor.summary(print_fn=lambda x: file.write(x + '\n'))
-        with open(f"{settings.MODEL_NAME}/critic-summary.txt", 'w') as file:
+        with open(f"{settings.MODEL_NAME}/model/critic-summary.txt", 'w') as file:
             critic.summary(print_fn=lambda x: file.write(x + '\n'))
-        with open(f"{settings.MODEL_NAME}/policy-summary.txt", 'w') as file:
+        with open(f"{settings.MODEL_NAME}/model/policy-summary.txt", 'w') as file:
             policy.summary(print_fn=lambda x: file.write(x + '\n'))
 
         return actor, critic, policy
@@ -82,54 +87,53 @@ class Agent:
     def save_model(self):
         while True:
             try:
-                self.actor.save(f"{settings.MODEL_NAME}/actor")
+                self.actor.save(f"{settings.MODEL_NAME}/model/actor")
                 break
             except OSError:
                 time.sleep(0.2)
         while True:
             try:
-                self.critic.save(f"{settings.MODEL_NAME}/critic")
+                self.critic.save(f"{settings.MODEL_NAME}/model/critic")
                 break
             except OSError:
                 time.sleep(0.2)
 
         while True:
             try:
-                self.policy.save(f"{settings.MODEL_NAME}/policy")
+                self.policy.save(f"{settings.MODEL_NAME}/model/policy")
                 break
             except OSError:
                 time.sleep(0.2)
 
         return True
 
-    def choose_action(self, observation):
-
+    def choose_action_list(self, observation):
         state = observation
         probabilities = self.policy.predict(state)
-        action = np.random.choice(self.action_space, p=probabilities)
-        return action
+        Actions = [np.random.choice(self.action_space, p=prob) for prob in probabilities]
+        return Actions
 
     def load_model(self):
-        if os.path.isfile(f"{settings.MODEL_NAME}/actor") and \
-                os.path.isfile(f"{settings.MODEL_NAME}/critic") and \
-                os.path.isfile(f"{settings.MODEL_NAME}/policy"):
+        if os.path.isfile(f"{settings.MODEL_NAME}/model/actor") and \
+                os.path.isfile(f"{settings.MODEL_NAME}/model/critic") and \
+                os.path.isfile(f"{settings.MODEL_NAME}/model/policy"):
             while True:
                 try:
-                    self.actor = load_model(f"{settings.MODEL_NAME}/actor")
+                    self.actor = load_model(f"{settings.MODEL_NAME}/model/actor")
                     break
                 except OSError:
                     time.sleep(0.2)
 
             while True:
                 try:
-                    self.critic = load_model(f"{settings.MODEL_NAME}/critic")
+                    self.critic = load_model(f"{settings.MODEL_NAME}/model/critic")
                     break
                 except OSError:
                     time.sleep(0.2)
 
             while True:
                 try:
-                    self.policy = load_model(f"{settings.MODEL_NAME}/policy")
+                    self.policy = load_model(f"{settings.MODEL_NAME}/model/policy")
                     break
                 except OSError:
                     time.sleep(0.2)
@@ -141,21 +145,6 @@ class Agent:
     def train(self, train_data):
         self.actor_critic_train(train_data)
 
-    #     if len(self.memory) < self.min_batch_size:
-    #         return None
-    #     elif settings.TRAIN_ALL_SAMPLES:
-    #         train_data = list(self.memory)
-    #     elif len(self.memory) >= self.max_batch_size:
-    #         train_data = random.sample(self.memory, self.max_batch_size)
-    #         # print(f"Too much data, selecting from: {len(self.memory)} samples")
-    #     else:
-    #         train_data = list(self.memory)
-    #
-    #     if settings.STEP_TRAINING or settings.TRAIN_ALL_SAMPLES:
-    #         self.memory.clear()
-    #
-    #     self._normal_train(train_data)
-
     def actor_critic_train(self, train_data):
         Old_states = []
         New_states = []
@@ -163,25 +152,32 @@ class Agent:
         Dones = []
         Actions = []
 
-        for old_state, action, reward, new_state, done in train_data:
+        for old_state, action, reward, new_state, done in zip(train_data[0], train_data[1], train_data[2],
+                                                              train_data[3], train_data[4]):
             Old_states.append(old_state)
             New_states.append(new_state)
             Actions.append(action)
             Rewards.append(reward)
             Dones.append(done)
 
-        current_critic_value = self.critic.predict(Old_states)
-        future_critic_values = self.critic.predict((New_states))
+        Old_states = np.array(Old_states)
+        New_states = np.array(New_states)
+        Rewards = np.array(Rewards)
 
-        target = Rewards + self.gamma * Dones * future_critic_values
-        delta = target - current_critic_value
+        current_critic_value = self.critic.predict(Old_states).ravel()
+        future_critic_values = self.critic.predict(New_states).ravel()  # Converting to vector
 
-        Target_Actions = np.zeros(len(train_data), self.action_space)
+        int_dones = np.array([*map(lambda x: int(not x), Dones)])
+        targets = Rewards + self.gamma * int_dones * future_critic_values
+        delta = targets - current_critic_value
+
+        Target_Actions = np.zeros((len(train_data[0]), self.action_space))
+
         for act_ind, action in enumerate(Actions):
             Target_Actions[act_ind, action] = 1.0
 
-        self.actor.fit([Old_states, Target_Actions], Target_Actions, verbose=0)
-        self.critic.fit(Old_states, target, verbose=0)
+        self.actor.fit([Old_states, delta], Target_Actions, verbose=0)
+        self.critic.fit(Old_states, targets, verbose=0)
 
 
 def training():
@@ -223,7 +219,7 @@ def training():
             Games = []  # Close screen
             States = []
             for loop_ind in range(settings.SIM_COUNT):
-                game = gym.make('LunarLanderContinuous-v2')
+                game = gym.make('LunarLander-v2')
                 state = game.reset()
                 Games.append(game)
                 States.append(state)
@@ -237,12 +233,13 @@ def training():
                 step += 1
                 Old_states = np.array(States)
 
-                Actions = agent.choose_action(Old_states)
+                Actions = agent.choose_action_list(Old_states)
                 Dones = []
                 Rewards = []
                 States = []
 
                 for g_index, game in enumerate(Games):
+                    current_action = Actions[g_index]
                     state, reward, done, info = game.step(action=Actions[g_index])
                     # agent.update_memory((Old_states[g_index], state, reward, Actions[g_index], done))
                     Rewards.append(reward)
@@ -250,12 +247,12 @@ def training():
                     Dones.append(done)
                     States.append(state)
 
-                # if render:
-                #     Games[0].render()
-                #     time.sleep(settings.RENDER_DELAY)
+                if render:
+                    Games[0].render()
+                    time.sleep(settings.RENDER_DELAY)
 
                 if settings.STEP_TRAINING and settings.ALLOW_TRAIN:
-                    train_data = (Old_states, Actions, Rewards, States)
+                    train_data = (Old_states, Actions, Rewards, States, Dones)
                     agent.train(train_data)
                     if not (episode + episode_offset) % 100 and episode > 0:
                         agent.save_model()
