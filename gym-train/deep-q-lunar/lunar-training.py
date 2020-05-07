@@ -24,7 +24,9 @@ class Agent:
                  action_space,
                  alpha,
                  beta,
-                 gamma=0.99):
+                 gamma=0.99,
+                 dense1=256,
+                 dense2=256):
 
         dt = datetime.datetime.timetuple(datetime.datetime.now())
         self.runtime_name = f"{dt.tm_mon:>02}-{dt.tm_mday:>02}--" \
@@ -37,11 +39,22 @@ class Agent:
         self.gamma = gamma
 
         if settings.LOAD_MODEL:
-            load_success = self.load_model()
-            print(f"Loaded model: {settings.MODEL_NAME}")
+            try:
+                layers = np.load(f"{settings.MODEL_NAME}/layers.npy", allow_pickle=True)
+                self.dense1, self.dense2 = layers
+                print(f"Loaded layers shapes: {settings.MODEL_NAME}")
+            except FileNotFoundError:
+
+                self.dense1, self.dense2 = dense1, dense2
+            self.actor, self.critic, self.policy = self.create_actor_critic_network()
+            loaded = self.load_model()
+            if loaded:
+                print(f"Loading weights: {settings.MODEL_NAME}")
+            else:
+                print(f"Not loaded weights: {settings.MODEL_NAME}")
+
         else:
-            load_success = False
-        if not load_success:
+            self.dense1, self.dense2 = dense1, dense2
             print(f"New model: {settings.MODEL_NAME}")
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
@@ -49,8 +62,8 @@ class Agent:
         input = Input(shape=self.input_shape)
         delta = Input(shape=(1,))
 
-        dense1 = Dense(256, activation='relu')(input)
-        dense2 = Dense(256, activation='relu')(dense1)
+        dense1 = Dense(self.dense1, activation='relu')(input)
+        dense2 = Dense(self.dense2, activation='relu')(dense1)
 
         probs = Dense(self.action_space, activation='softmax')(dense2)
         values = Dense(1, activation='linear')(dense2)
@@ -87,24 +100,24 @@ class Agent:
     def save_model(self):
         while True:
             try:
-                self.actor.save(f"{settings.MODEL_NAME}/model/actor")
+                self.actor.save_weights(f"{settings.MODEL_NAME}/model/actor-weights")
                 break
             except OSError:
                 time.sleep(0.2)
         while True:
             try:
-                self.critic.save(f"{settings.MODEL_NAME}/model/critic")
+                self.critic.save_weights(f"{settings.MODEL_NAME}/model/critic-weights")
                 break
             except OSError:
                 time.sleep(0.2)
 
         while True:
             try:
-                self.policy.save(f"{settings.MODEL_NAME}/model/policy")
+                self.policy.save_weights(f"{settings.MODEL_NAME}/model/policy-weights")
                 break
             except OSError:
                 time.sleep(0.2)
-
+        np.save(f"{settings.MODEL_NAME}/model/layers.npy", (self.dense1, self.dense2))
         return True
 
     def choose_action_list(self, observation):
@@ -114,26 +127,26 @@ class Agent:
         return Actions
 
     def load_model(self):
-        if os.path.isfile(f"{settings.MODEL_NAME}/model/actor") and \
-                os.path.isfile(f"{settings.MODEL_NAME}/model/critic") and \
-                os.path.isfile(f"{settings.MODEL_NAME}/model/policy"):
+        if os.path.isfile(f"{settings.MODEL_NAME}/model/actor-weights") and \
+                os.path.isfile(f"{settings.MODEL_NAME}/model/critic-weights") and \
+                os.path.isfile(f"{settings.MODEL_NAME}/model/policy-weights"):
             while True:
                 try:
-                    self.actor = load_model(f"{settings.MODEL_NAME}/model/actor")
+                    self.actor.load_weights(f"{settings.MODEL_NAME}/model/actor-weights")
                     break
                 except OSError:
                     time.sleep(0.2)
 
             while True:
                 try:
-                    self.critic = load_model(f"{settings.MODEL_NAME}/model/critic")
+                    self.critic.load_weights(f"{settings.MODEL_NAME}/model/critic-weights")
                     break
                 except OSError:
                     time.sleep(0.2)
 
             while True:
                 try:
-                    self.policy = load_model(f"{settings.MODEL_NAME}/model/policy")
+                    self.policy.load_weights(f"{settings.MODEL_NAME}/model/policy-weights")
                     break
                 except OSError:
                     time.sleep(0.2)
@@ -182,7 +195,10 @@ class Agent:
 
 def training():
     try:
-        episode_offset = np.load(f"{settings.MODEL_NAME}/last-episode-num.npy", allow_pickle=True)
+        if settings.LOAD_MODEL:
+            episode_offset = np.load(f"{settings.MODEL_NAME}/last-episode-num.npy", allow_pickle=True)
+        else:
+            episode_offset = 0
     except FileNotFoundError:
         episode_offset = 0
 
@@ -239,9 +255,7 @@ def training():
                 States = []
 
                 for g_index, game in enumerate(Games):
-                    current_action = Actions[g_index]
                     state, reward, done, info = game.step(action=Actions[g_index])
-                    # agent.update_memory((Old_states[g_index], state, reward, Actions[g_index], done))
                     Rewards.append(reward)
                     Scores[g_index] += reward
                     Dones.append(done)
@@ -302,7 +316,7 @@ def training():
 def moving_average(array, window_size=None):
     size = len(array)
     if not window_size or window_size and size > window_size:
-        window_size = size // 20
+        window_size = size // 10
 
     if window_size > 1000:
         window_size = 1000
@@ -328,7 +342,7 @@ def plot_results():
     style.use('ggplot')
     plt.figure(figsize=(20, 11))
 
-    plt.subplot(411)
+    plt.subplot(311)
     effectiveness = [score / moves for score, moves in zip(stats['score'], stats['flighttime'])]
     plt.scatter(stats['episode'], effectiveness, label='Effectiveness', color='b', marker='o', s=10, alpha=0.5)
     plt.plot(stats['episode'], moving_average(effectiveness), label='Average', linewidth=3)
@@ -336,7 +350,7 @@ def plot_results():
     plt.subplots_adjust(hspace=0.3)
     plt.legend(loc=2)
 
-    plt.subplot(412)
+    plt.subplot(312)
     plt.suptitle(f"{settings.MODEL_NAME}\nStats")
     plt.scatter(
             np.array(stats['episode']),
@@ -347,17 +361,17 @@ def plot_results():
     plt.plot(stats['episode'], moving_average(stats['score']), label='Average', linewidth=3)
     plt.legend(loc=2)
 
-    plt.subplot(413)
+    plt.subplot(313)
     plt.scatter(stats['episode'], stats['flighttime'], label='Flight-time', color='b', marker='o', s=10, alpha=0.5)
     plt.plot(stats['episode'], moving_average(stats['flighttime']), label='Average', linewidth=3)
     plt.legend(loc=2)
 
-    plt.subplot(414)
-    plt.scatter(stats['episode'], stats['eps'], label='Epsilon', color='k', marker='.', s=10, alpha=1)
-    plt.legend(loc=2)
+    # plt.subplot(414)
+    # plt.scatter(stats['episode'], stats['eps'], label='Epsilon', color='k', marker='.', s=10, alpha=1)
+    # plt.legend(loc=2)
 
     if settings.SAVE_PICS:
-        plt.savefig(f"{settings.MODEL_NAME}/food-{agent.runtime_name}.png")
+        plt.savefig(f"{settings.MODEL_NAME}/scores-{agent.runtime_name}.png")
 
     # BIG Q-PLOT
     # plt.figure(figsize=(20, 11))
@@ -406,6 +420,8 @@ if __name__ == "__main__":
 
     agent = Agent(alpha=1e-5, beta=3e-6, gamma=0.99,
                   input_shape=INPUT_SHAPE,
-                  action_space=ACTION_SPACE)
+                  action_space=ACTION_SPACE,
+                  dense1=settings.DENSE1,
+                  dense2=settings.DENSE2)
     training()
     plot_results()
