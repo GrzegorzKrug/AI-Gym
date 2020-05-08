@@ -59,10 +59,10 @@ class Agent:
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
     def create_actor_critic_network(self):
-        input = Input(shape=self.input_shape)
+        input1 = Input(shape=self.input_shape)
         delta = Input(shape=(1,))
 
-        dense1 = Dense(self.dense1, activation='relu')(input)
+        dense1 = Dense(self.dense1, activation='relu')(input1)
         dense2 = Dense(self.dense2, activation='relu')(dense1)
 
         probs = Dense(self.action_space, activation='softmax')(dense2)
@@ -74,13 +74,13 @@ class Agent:
 
             return backend.sum(-log_lik * delta)
 
-        actor = Model(inputs=[input, delta], outputs=[probs])
+        actor = Model(inputs=[input1, delta], outputs=[probs])
         actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
 
-        critic = Model(inputs=[input], outputs=[values])
+        critic = Model(inputs=[input1], outputs=[values])
         critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
 
-        policy = Model(inputs=[input], outputs=[probs])
+        policy = Model(inputs=[input1], outputs=[probs])
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
 
@@ -218,7 +218,7 @@ def training():
                 render = True
                 if settings.SHOW_LAST:
                     input("Last agent is waiting...")
-            elif episode == 0 or not settings.ALLOW_TRAIN:
+            elif episode == 0 and settings.SHOW_FIRST or not settings.ALLOW_TRAIN:
                 eps = 0
                 render = True
             elif episode < settings.EPS_INTERVAL / 4:
@@ -313,23 +313,26 @@ def training():
         np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + 1 + episode_offset)
 
 
-def moving_average(array, window_size=None):
+def moving_average(array, window_size=None, multi_agents=1):
     size = len(array)
     if not window_size or window_size and size > window_size:
-        window_size = size // 10
+        window_size = size // multi_agents // 10
 
     if window_size > 1000:
         window_size = 1000
 
-    elif window_size < 1:
-        window_size = 1
+    elif window_size < multi_agents:
+        window_size = multi_agents
 
+    window_size -= window_size % multi_agents
     output = []
-    for sample_num, _ in enumerate(array):
-        arr_slice = array[sample_num - window_size + 1:sample_num + 1]
+    for sample_num in range(0, len(array), multi_agents):
+
+        sample_end = sample_num + window_size
+        arr_slice = array[sample_num: sample_end]
+
         if len(arr_slice) < window_size:
-            output.append(np.mean(array[0:sample_num + 1]))
-            # print(sample_num, array[0:sample_num+1], np.mean(array[0:sample_num+1]))
+            output.append(np.mean(array[0:sample_num + multi_agents]))
         else:
             output.append(
                     np.mean(arr_slice)
@@ -345,7 +348,7 @@ def plot_results():
     plt.subplot(311)
     effectiveness = [score / moves for score, moves in zip(stats['score'], stats['flighttime'])]
     plt.scatter(stats['episode'], effectiveness, label='Effectiveness', color='b', marker='o', s=10, alpha=0.5)
-    plt.plot(stats['episode'], moving_average(effectiveness), label='Average', linewidth=3)
+    plt.plot(moving_average(effectiveness, multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
     plt.xlabel("Epoch")
     plt.subplots_adjust(hspace=0.3)
     plt.legend(loc=2)
@@ -358,12 +361,13 @@ def plot_results():
             alpha=0.2, marker='s', c='b', s=10, label="Score"
     )
 
-    plt.plot(stats['episode'], moving_average(stats['score']), label='Average', linewidth=3)
+    plt.plot(moving_average(stats['score'], multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
     plt.legend(loc=2)
 
     plt.subplot(313)
     plt.scatter(stats['episode'], stats['flighttime'], label='Flight-time', color='b', marker='o', s=10, alpha=0.5)
-    plt.plot(stats['episode'], moving_average(stats['flighttime']), label='Average', linewidth=3)
+    plt.plot(stats['episode'], moving_average(stats['flighttime'], multi_agents=settings.SIM_COUNT), label='Average',
+             linewidth=3)
     plt.legend(loc=2)
 
     # plt.subplot(414)
