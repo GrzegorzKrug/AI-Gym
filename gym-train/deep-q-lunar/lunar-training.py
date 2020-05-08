@@ -316,7 +316,7 @@ def training():
 def moving_average(array, window_size=None, multi_agents=1):
     size = len(array)
     if not window_size or window_size and size > window_size:
-        window_size = size // multi_agents // 5
+        window_size = size / 5 // multi_agents
 
     if window_size > 1000:
         window_size = 1000
@@ -332,7 +332,7 @@ def moving_average(array, window_size=None, multi_agents=1):
         arr_slice = array[sample_num: sample_end]
 
         if len(arr_slice) < window_size:
-            output.append(np.mean(array[0:sample_num + multi_agents]))
+            output.append(np.mean(array[0:sample_end]))
         else:
             output.append(
                     np.mean(arr_slice)
