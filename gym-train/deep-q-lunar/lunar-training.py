@@ -40,7 +40,7 @@ class Agent:
 
         if settings.LOAD_MODEL:
             try:
-                layers = np.load(f"{settings.MODEL_NAME}/layers.npy", allow_pickle=True)
+                layers = np.load(f"{settings.MODEL_NAME}/model/layers.npy", allow_pickle=True)
                 self.dense1, self.dense2 = layers
                 print(f"Loaded layers shapes: {settings.MODEL_NAME}")
             except FileNotFoundError:
@@ -316,7 +316,7 @@ def training():
 def moving_average(array, window_size=None, multi_agents=1):
     size = len(array)
     if not window_size or window_size and size > window_size:
-        window_size = size // multi_agents // 10
+        window_size = size // multi_agents // 5
 
     if window_size > 1000:
         window_size = 1000
@@ -342,13 +342,14 @@ def moving_average(array, window_size=None, multi_agents=1):
 
 def plot_results():
     print("Plotting data now...")
+
     style.use('ggplot')
     plt.figure(figsize=(20, 11))
-
+    X = range(stats['episode'][0], stats['episode'][-1] + 1)
     plt.subplot(311)
     effectiveness = [score / moves for score, moves in zip(stats['score'], stats['flighttime'])]
     plt.scatter(stats['episode'], effectiveness, label='Effectiveness', color='b', marker='o', s=10, alpha=0.5)
-    plt.plot(moving_average(effectiveness, multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
+    plt.plot(X, moving_average(effectiveness, multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
     plt.xlabel("Epoch")
     plt.subplots_adjust(hspace=0.3)
     plt.legend(loc=2)
@@ -361,42 +362,18 @@ def plot_results():
             alpha=0.2, marker='s', c='b', s=10, label="Score"
     )
 
-    plt.plot(moving_average(stats['score'], multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
+    plt.plot(X, moving_average(stats['score'], multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
     plt.legend(loc=2)
 
     plt.subplot(313)
     plt.scatter(stats['episode'], stats['flighttime'], label='Flight-time', color='b', marker='o', s=10, alpha=0.5)
-    plt.plot(stats['episode'], moving_average(stats['flighttime'], multi_agents=settings.SIM_COUNT), label='Average',
+    plt.plot(X, moving_average(stats['flighttime'], multi_agents=settings.SIM_COUNT), label='Average',
              linewidth=3)
     plt.legend(loc=2)
-
-    # plt.subplot(414)
-    # plt.scatter(stats['episode'], stats['eps'], label='Epsilon', color='k', marker='.', s=10, alpha=1)
-    # plt.legend(loc=2)
 
     if settings.SAVE_PICS:
         plt.savefig(f"{settings.MODEL_NAME}/scores-{agent.runtime_name}.png")
 
-    # BIG Q-PLOT
-    # plt.figure(figsize=(20, 11))
-    # plt.scatter(range(len(Predicts[0])), Predicts[0], c='r', label='up', alpha=0.2, s=3, marker='o')
-    # plt.scatter(range(len(Predicts[1])), Predicts[1], c='g', label='right', alpha=0.2, s=3, marker='o')
-    # plt.scatter(range(len(Predicts[2])), Predicts[2], c='m', label='down', alpha=0.2, s=3, marker='o')
-    # plt.scatter(range(len(Predicts[3])), Predicts[3], c='b', label='left', alpha=0.2, s=3, marker='o')
-    # y_min, y_max = np.min(Predicts), np.max(Predicts)
-    #
-    # for sep in Pred_sep:
-    #     last_line, = plt.plot([sep, sep], [y_min, y_max], c='k', linewidth=0.3, alpha=0.2)
-    #
-    # plt.title(f"{MODEL_NAME}\nMovement 'directions' evolution in time, learning-rate:{AGENT_LR}\n")
-    # last_line.set_label("Epoch separator")
-    # plt.xlabel("Sample")
-    # plt.ylabel("Q-value")
-    # plt.legend(loc='best')
-    #
-    # if SAVE_PICS:
-    #     plt.savefig(f"{MODEL_NAME}/Qs-{agent.runtime_name}.png")
-    #
     if not settings.SAVE_PICS:
         plt.show()
 
