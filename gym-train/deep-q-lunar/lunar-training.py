@@ -183,7 +183,9 @@ class Agent:
 
         current_critic_value = self.critic.predict(Old_states).ravel()
         future_critic_values = self.critic.predict(New_states).ravel()  # Converting to vector
-
+        # print()
+        # print(current_critic_value)
+        # print(future_critic_values)
         int_dones = np.array([*map(lambda x: int(not x), Dones)])
         targets = Rewards + self.gamma * int_dones * future_critic_values
         delta = targets - current_critic_value
@@ -316,7 +318,7 @@ def moving_average(array, window_size=None, multi_agents=1):
     size = len(array)
 
     if not window_size or window_size and size > window_size:
-        window_size = size // 5
+        window_size = size // 20
 
     window_size *= multi_agents
 
@@ -372,7 +374,7 @@ def plot_results():
     plt.legend(loc=2)
 
     plt.subplot(414)
-    plt.plot(stats['eps'], label='eps', color='k')
+    plt.plot(stats['episode'], stats['eps'], label='eps', color='k')
     plt.legend(loc=2)
 
     if settings.SAVE_PICS and not settings.RECORD_GAME:

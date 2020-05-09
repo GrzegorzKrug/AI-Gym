@@ -1,10 +1,10 @@
 SIM_COUNT = 9
-EPOCHS = 400
+EPOCHS = 500
 TIMEOUT = 200
 TRAIN_MAX_MIN_DURATION = 10
 
 SHOW_FIRST = True
-SHOW_EVERY = 10
+SHOW_EVERY = 50
 RENDER_DELAY = 0.0003
 
 REPLAY_MEMORY_SIZE = 5 * 200 * SIM_COUNT  # 10 full games 3k each
@@ -17,12 +17,12 @@ RECORD_GAME = False
 LOAD_MODEL = True
 
 model = "StepModel"
-MODEL_NAME = f"Continous-{model}-5--MB_{MIN_BATCH_SIZE}"
+MODEL_NAME = f"Continous-{model}-4--MB_{MIN_BATCH_SIZE}"
 
 DENSE1 = 64
 DENSE2 = 32
 # Training params
-AGENT_LR = 1e-3
+AGENT_LR = 1e-2
 
 DISCOUNT = 0.95
 FIRST_EPS = 0.3
