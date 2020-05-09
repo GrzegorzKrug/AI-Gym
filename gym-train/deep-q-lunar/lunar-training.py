@@ -7,6 +7,7 @@ import random
 import keras
 import time
 import gym
+import cv2
 import os
 
 from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, Input, concatenate
@@ -194,14 +195,6 @@ class Agent:
 
 
 def training():
-    try:
-        if settings.LOAD_MODEL:
-            episode_offset = np.load(f"{settings.MODEL_NAME}/last-episode-num.npy", allow_pickle=True)
-        else:
-            episode_offset = 0
-    except FileNotFoundError:
-        episode_offset = 0
-
     eps_iter = iter(np.linspace(settings.RAMP_EPS, settings.END_EPS, settings.EPS_INTERVAL))
     time_start = time.time()
     emergency_break = False
@@ -263,7 +256,11 @@ def training():
 
                 if render:
                     Games[0].render()
-                    time.sleep(settings.RENDER_DELAY)
+                    if settings.RECORD_GAME:
+                        array = Games[0].viewer.get_array()
+                        cv2.imwrite(f"{settings.MODEL_NAME}/game-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
+                    else:
+                        time.sleep(settings.RENDER_DELAY)
 
                 if settings.STEP_TRAINING and settings.ALLOW_TRAIN:
                     train_data = (Old_states, Actions, Rewards, States, Dones)
@@ -316,7 +313,7 @@ def training():
 def moving_average(array, window_size=None, multi_agents=1):
     size = len(array)
     if not window_size or window_size and size > window_size:
-        window_size = size // multi_agents // 5
+        window_size = size // 5
 
     # if window_size > 1000:
     #     window_size = 1000
@@ -371,7 +368,7 @@ def plot_results():
              linewidth=3)
     plt.legend(loc=2)
 
-    if settings.SAVE_PICS:
+    if settings.SAVE_PICS and not settings.RECORD_GAME:
         plt.savefig(f"{settings.MODEL_NAME}/scores-{agent.runtime_name}.png")
 
     if not settings.SAVE_PICS:
@@ -387,7 +384,15 @@ if __name__ == "__main__":
     config.gpu_options.per_process_gpu_memory_fraction = 0.3
     sess = tf.compat.v1.Session(config=config)
 
-    os.makedirs(settings.MODEL_NAME, exist_ok=True)
+    try:
+        if settings.LOAD_MODEL:
+            episode_offset = np.load(f"{settings.MODEL_NAME}/last-episode-num.npy", allow_pickle=True)
+        else:
+            episode_offset = 0
+    except FileNotFoundError:
+        episode_offset = 0
+
+    os.makedirs(f"{settings.MODEL_NAME}/game-{episode_offset}", exist_ok=True)
 
     "Environment"
     ACTION_SPACE = 4  # Turn left, right or none
