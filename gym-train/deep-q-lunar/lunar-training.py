@@ -4,7 +4,6 @@ import numpy as np
 import settings
 import datetime
 import random
-import keras
 import time
 import gym
 import cv2
@@ -13,6 +12,7 @@ import os
 from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, Input, concatenate
 from keras.models import Model, load_model, Sequential
 from keras.utils import plot_model
+from keras.initializers import RandomUniform
 from keras.optimizers import Adam
 from collections import deque
 from matplotlib import style
@@ -62,26 +62,30 @@ class Agent:
     def create_actor_critic_network(self):
         input1 = Input(shape=self.input_shape)
         delta = Input(shape=(1,))
-
-        dense1 = Dense(self.dense1, activation='relu')(input1)
-        dense2 = Dense(self.dense2, activation='relu')(dense1)
+        initializer = RandomUniform(minval=-1e-1, maxval=1e-1)
+        dense1 = Dense(self.dense1, activation='relu',
+                       kernel_initializer=initializer)(input1)
+        dense2 = Dense(self.dense2, activation='relu',
+                       kernel_initializer=initializer)(dense1)
 
         probs = Dense(self.action_space, activation='softmax')(dense2)
+        engines = Dense(self.action_space, activation='tanh')(dense2)
         values = Dense(1, activation='linear')(dense2)
 
         def custom_loss(y_true, y_pred):
             out = backend.clip(y_pred, 1e-8, 1 - 1e-8)
-            log_lik = y_true * backend.log(out)
+            log_like = y_true * backend.log(out)
+            return backend.sum(-log_like * delta)
 
-            return backend.sum(-log_lik * delta)
-
-        actor = Model(inputs=[input1, delta], outputs=[probs])
+        actor = Model(inputs=[input1, delta], outputs=[engines])
         actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
 
         critic = Model(inputs=[input1], outputs=[values])
         critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
 
-        policy = Model(inputs=[input1], outputs=[probs])
+        merged = concatenate([engines, probs])
+        acts = Dense(self.action_space, activation='tanh')(merged)
+        policy = Model(inputs=[input1], outputs=[acts])
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
 
@@ -121,10 +125,8 @@ class Agent:
         np.save(f"{settings.MODEL_NAME}/model/layers.npy", (self.dense1, self.dense2))
         return True
 
-    def choose_action_list(self, observation):
-        state = observation
-        probabilities = self.policy.predict(state)
-        Actions = [np.random.choice(self.action_space, p=prob) for prob in probabilities]
+    def choose_action_list(self, States):
+        Actions = self.policy.predict(States)
         return Actions
 
     def load_model(self):
@@ -177,6 +179,7 @@ class Agent:
         Old_states = np.array(Old_states)
         New_states = np.array(New_states)
         Rewards = np.array(Rewards)
+        Actions = np.array(Actions)
 
         current_critic_value = self.critic.predict(Old_states).ravel()
         future_critic_values = self.critic.predict(New_states).ravel()  # Converting to vector
@@ -185,12 +188,7 @@ class Agent:
         targets = Rewards + self.gamma * int_dones * future_critic_values
         delta = targets - current_critic_value
 
-        Target_Actions = np.zeros((len(train_data[0]), self.action_space))
-
-        for act_ind, action in enumerate(Actions):
-            Target_Actions[act_ind, action] = 1.0
-
-        self.actor.fit([Old_states, delta], Target_Actions, verbose=0)
+        self.actor.fit([Old_states, delta], Actions, verbose=0)
         self.critic.fit(Old_states, targets, verbose=0)
 
 
@@ -228,7 +226,7 @@ def training():
             Games = []  # Close screen
             States = []
             for loop_ind in range(settings.SIM_COUNT):
-                game = gym.make('LunarLander-v2')
+                game = gym.make('LunarLanderContinuous-v2')
                 state = game.reset()
                 Games.append(game)
                 States.append(state)
@@ -241,13 +239,16 @@ def training():
             while len(Games):
                 step += 1
                 Old_states = np.array(States)
-
-                Actions = agent.choose_action_list(Old_states)
+                if eps > np.random.random():
+                    Actions = np.random.random((len(Games), 2)) * 2 - 1
+                else:
+                    Actions = agent.choose_action_list(Old_states)
                 Dones = []
                 Rewards = []
                 States = []
 
                 for g_index, game in enumerate(Games):
+                    # print(Actions[g_index])
                     state, reward, done, info = game.step(action=Actions[g_index])
                     Rewards.append(reward)
                     Scores[g_index] += reward
@@ -256,16 +257,17 @@ def training():
 
                 if render:
                     Games[0].render()
+                    # print(Actions[0])
                     if settings.RECORD_GAME:
                         array = Games[0].viewer.get_array()
                         cv2.imwrite(f"{settings.MODEL_NAME}/game-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
                     else:
                         time.sleep(settings.RENDER_DELAY)
 
-                if settings.STEP_TRAINING and settings.ALLOW_TRAIN:
+                if settings.ALLOW_TRAIN:
                     train_data = (Old_states, Actions, Rewards, States, Dones)
                     agent.train(train_data)
-                    if not (episode + episode_offset) % 100 and episode > 0:
+                    if not (episode + episode_offset) % 25 and episode > 0:
                         agent.save_model()
                         np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
 
@@ -312,28 +314,29 @@ def training():
 
 def moving_average(array, window_size=None, multi_agents=1):
     size = len(array)
+
     if not window_size or window_size and size > window_size:
         window_size = size // 5
 
-    # if window_size > 1000:
-    #     window_size = 1000
+    window_size *= multi_agents
 
-    if window_size < multi_agents:
-        window_size = multi_agents
+    while len(array) % window_size or window_size % multi_agents:
+        window_size -= 1
+        if window_size < 1:
+            window_size = 1
+            break
 
-    window_size -= window_size % multi_agents
     output = []
-    for sample_num in range(0, len(array), multi_agents):
 
-        sample_end = sample_num + window_size
-        arr_slice = array[sample_num: sample_end]
-
-        if len(arr_slice) < window_size:
-            output.append(np.mean(array[0:sample_end]))
+    for sample_num in range(multi_agents - 1, len(array), multi_agents):
+        if sample_num < window_size:
+            output.append(np.mean(array[:sample_num + 1]))
         else:
-            output.append(
-                    np.mean(arr_slice)
-            )
+            output.append(np.mean(array[sample_num - window_size: sample_num + 1]))
+
+    if len(array) % window_size:
+        output.append(np.mean(array[-window_size:]))
+
     return output
 
 
@@ -343,7 +346,7 @@ def plot_results():
     style.use('ggplot')
     plt.figure(figsize=(20, 11))
     X = range(stats['episode'][0], stats['episode'][-1] + 1)
-    plt.subplot(311)
+    plt.subplot(411)
     effectiveness = [score / moves for score, moves in zip(stats['score'], stats['flighttime'])]
     plt.scatter(stats['episode'], effectiveness, label='Effectiveness', color='b', marker='o', s=10, alpha=0.5)
     plt.plot(X, moving_average(effectiveness, multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
@@ -351,7 +354,7 @@ def plot_results():
     plt.subplots_adjust(hspace=0.3)
     plt.legend(loc=2)
 
-    plt.subplot(312)
+    plt.subplot(412)
     plt.suptitle(f"{settings.MODEL_NAME}\nStats")
     plt.scatter(
             np.array(stats['episode']),
@@ -362,10 +365,14 @@ def plot_results():
     plt.plot(X, moving_average(stats['score'], multi_agents=settings.SIM_COUNT), label='Average', linewidth=3)
     plt.legend(loc=2)
 
-    plt.subplot(313)
+    plt.subplot(413)
     plt.scatter(stats['episode'], stats['flighttime'], label='Flight-time', color='b', marker='o', s=10, alpha=0.5)
     plt.plot(X, moving_average(stats['flighttime'], multi_agents=settings.SIM_COUNT), label='Average',
              linewidth=3)
+    plt.legend(loc=2)
+
+    plt.subplot(414)
+    plt.plot(stats['eps'], label='eps', color='k')
     plt.legend(loc=2)
 
     if settings.SAVE_PICS and not settings.RECORD_GAME:
@@ -395,7 +402,7 @@ if __name__ == "__main__":
     os.makedirs(f"{settings.MODEL_NAME}/game-{episode_offset}", exist_ok=True)
 
     "Environment"
-    ACTION_SPACE = 4  # Turn left, right or none
+    ACTION_SPACE = 2  # Turn left, right or none
     INPUT_SHAPE = (8,)
 
     stats = {
