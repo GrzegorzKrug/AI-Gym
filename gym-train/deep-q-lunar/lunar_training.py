@@ -69,22 +69,21 @@ class Agent:
                        kernel_initializer=initializer)(dense1)
 
         engines = Dense(self.action_space, activation='tanh')(dense2)
-        probs = Dense(self.action_space, activation='tanh')(engines)
-        values = Dense(1, activation='linear')(dense2)
+        values = Dense(1, activation='linear')(engines)
 
-        def custom_loss(y_true, y_pred):
-            out = backend.clip(y_pred, 1e-8, 1 - 1e-8)
-            log_like = y_true * backend.log(out)
-            return backend.sum(-log_like * delta)
+        # def custom_loss(y_true, y_pred):
+        #     out = backend.clip(y_pred, 1e-8, 1 - 1e-8)
+        #     log_like = y_true * backend.log(out)
+        #     return backend.sum(-log_like * delta)
 
         actor = Model(inputs=[input1, delta], outputs=[engines])
         critic = Model(inputs=[input1], outputs=[values])
 
         # merged = concatenate([engines, probs])
         # acts = Dense(self.action_space, activation='tanh')(merged)
-        policy = Model(inputs=[input1], outputs=[probs])
+        policy = Model(inputs=[input1], outputs=[engines])
 
-        actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
+        actor.compile(optimizer=Adam(self.alpha), loss='mean_squared_error')
         critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
@@ -190,8 +189,8 @@ class Agent:
         targets = Rewards + self.gamma * int_dones * future_critic_values
         delta = targets - current_critic_value
 
-        self.actor.fit([Old_states, delta], Actions, verbose=0)
         self.critic.fit(Old_states, targets, verbose=0)
+        self.actor.fit([Old_states, delta], Actions, verbose=0)
 
 
 def record_game():
@@ -310,11 +309,7 @@ def training():
                 if render:
                     Games[0].render()
                     # print(Actions[0])
-                    if settings.RECORD_GAME:
-                        array = Games[0].viewer.get_array()
-                        cv2.imwrite(f"{settings.MODEL_NAME}/game-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
-                    else:
-                        time.sleep(settings.RENDER_DELAY)
+                    time.sleep(settings.RENDER_DELAY)
 
                 if settings.ALLOW_TRAIN:
                     train_data = (Old_states, Actions, Rewards, States, Dones)
@@ -427,7 +422,7 @@ def plot_results():
     plt.plot(stats['episode'], stats['eps'], label='eps', color='k')
     plt.legend(loc=2)
 
-    if settings.SAVE_PICS and not settings.RECORD_GAME:
+    if settings.SAVE_PICS:
         plt.savefig(f"{settings.MODEL_NAME}/scores-{agent.runtime_name}.png")
 
     if not settings.SAVE_PICS:
@@ -468,8 +463,6 @@ if __name__ == "__main__":
                   action_space=ACTION_SPACE,
                   dense1=settings.DENSE1,
                   dense2=settings.DENSE2)
-    if settings.RECORD_GAME:
-        record_game()
-    else:
-        training()
-        plot_results()
+
+    training()
+    plot_results()
