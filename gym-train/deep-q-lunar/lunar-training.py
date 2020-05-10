@@ -62,14 +62,14 @@ class Agent:
     def create_actor_critic_network(self):
         input1 = Input(shape=self.input_shape)
         delta = Input(shape=(1,))
-        initializer = RandomUniform(minval=-1e-1, maxval=1e-1)
+        initializer = RandomUniform(minval=-5e-1, maxval=5e-1)
         dense1 = Dense(self.dense1, activation='relu',
                        kernel_initializer=initializer)(input1)
         dense2 = Dense(self.dense2, activation='relu',
                        kernel_initializer=initializer)(dense1)
 
-        probs = Dense(self.action_space, activation='softmax')(dense2)
         engines = Dense(self.action_space, activation='tanh')(dense2)
+        probs = Dense(self.action_space, activation='tanh')(engines)
         values = Dense(1, activation='linear')(dense2)
 
         def custom_loss(y_true, y_pred):
@@ -78,14 +78,14 @@ class Agent:
             return backend.sum(-log_like * delta)
 
         actor = Model(inputs=[input1, delta], outputs=[engines])
-        actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
-
         critic = Model(inputs=[input1], outputs=[values])
-        critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
 
-        merged = concatenate([engines, probs])
-        acts = Dense(self.action_space, activation='tanh')(merged)
-        policy = Model(inputs=[input1], outputs=[acts])
+        # merged = concatenate([engines, probs])
+        # acts = Dense(self.action_space, activation='tanh')(merged)
+        policy = Model(inputs=[input1], outputs=[probs])
+
+        actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
+        critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
 
@@ -192,6 +192,56 @@ class Agent:
 
         self.actor.fit([Old_states, delta], Actions, verbose=0)
         self.critic.fit(Old_states, targets, verbose=0)
+
+
+def record_game():
+    render = True
+    Games = []  # Close screen
+    States = []
+    for loop_ind in range(1):
+        game = gym.make('LunarLanderContinuous-v2')
+        state = game.reset()
+        Games.append(game)
+        States.append(state)
+
+    Scores = [0] * len(Games)
+    step = 0
+    All_score = []
+    All_steps = []
+
+    while len(Games):
+        step += 1
+        Old_states = np.array(States)
+        Actions = agent.choose_action_list(Old_states)
+        Dones = []
+        Rewards = []
+        States = []
+
+        for g_index, game in enumerate(Games):
+            # print(Actions[g_index])
+            state, reward, done, info = game.step(action=Actions[g_index])
+            Rewards.append(reward)
+            Scores[g_index] += reward
+            Dones.append(done)
+            States.append(state)
+
+        if render:
+            Games[0].render()
+            array = Games[0].viewer.get_array()
+            cv2.imwrite(f"{settings.MODEL_NAME}/game-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
+
+        for ind_d in range(len(Games) - 1, -1, -1):
+            if Dones[ind_d]:
+                if ind_d == 0 and render:
+                    render = False
+                    Games[0].close()
+
+                All_score.append(Scores[ind_d])
+                All_steps.append(step)
+
+                Scores.pop(ind_d)
+                Games.pop(ind_d)
+                States.pop(ind_d)
 
 
 def training():
@@ -418,5 +468,8 @@ if __name__ == "__main__":
                   action_space=ACTION_SPACE,
                   dense1=settings.DENSE1,
                   dense2=settings.DENSE2)
-    training()
-    plot_results()
+    if settings.RECORD_GAME:
+        record_game()
+    else:
+        training()
+        plot_results()

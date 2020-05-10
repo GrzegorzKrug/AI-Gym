@@ -13,23 +13,23 @@ MAX_BATCH_SIZE = 1000
 
 # Training method
 ALLOW_TRAIN = True
-RECORD_GAME = False
+RECORD_GAME = True
 LOAD_MODEL = True
 
 model = "StepModel"
-MODEL_NAME = f"Continous-{model}-4--MB_{MIN_BATCH_SIZE}"
+MODEL_NAME = f"Continous-{model}-6--MB_{MIN_BATCH_SIZE}"
 
 DENSE1 = 64
-DENSE2 = 32
+DENSE2 = 64
 # Training params
-AGENT_LR = 1e-2
+AGENT_LR = 1e-4
 
 DISCOUNT = 0.95
 FIRST_EPS = 0.3
 RAMP_EPS = 0.3
 INITIAL_SMALL_EPS = 0.05
 END_EPS = 0
-EPS_INTERVAL = 30
+EPS_INTERVAL = 10
 
 # Settings
 SAVE_PICS = ALLOW_TRAIN
