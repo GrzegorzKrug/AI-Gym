@@ -60,34 +60,38 @@ class Agent:
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
     def create_actor_critic_network(self):
-        input1 = Input(shape=self.input_shape)
+        weights_initializer = RandomUniform(minval=-1, maxval=1)
+        state_input = Input(shape=self.input_shape)
+
         delta = Input(shape=(1,))
-        initializer = RandomUniform(minval=-5e-1, maxval=5e-1)
-        dense1 = Dense(self.dense1, activation='relu',
-                       kernel_initializer=initializer)(input1)
-        dense2 = Dense(self.dense2, activation='relu',
-                       kernel_initializer=initializer)(dense1)
 
-        engines = Dense(self.action_space, activation='tanh')(dense2)
-        values = Dense(1, activation='linear')(engines)
+        def custom_loss(y_true, y_pred):
+            loss = backend.mean(backend.sum(backend.square((y_true - y_pred * delta))))
+            return loss
 
-        # def custom_loss(y_true, y_pred):
-        #     out = backend.clip(y_pred, 1e-8, 1 - 1e-8)
-        #     log_like = y_true * backend.log(out)
-        #     return backend.sum(-log_like * delta)
+        actor_dense1 = Dense(self.dense1, activation='relu',
+                             kernel_initializer=weights_initializer)(state_input)
+        actor_dense2 = Dense(self.dense2, activation='relu',
+                             kernel_initializer=weights_initializer)(actor_dense1)
 
-        actor = Model(inputs=[input1, delta], outputs=[engines])
-        critic = Model(inputs=[input1], outputs=[values])
+        critic_dense1 = Dense(self.dense1, activation='relu',
+                              kernel_initializer=weights_initializer)(state_input)
+        critic_dense2 = Dense(self.dense2, activation='relu',
+                              kernel_initializer=weights_initializer)(critic_dense1)
 
-        # merged = concatenate([engines, probs])
-        # acts = Dense(self.action_space, activation='tanh')(merged)
-        policy = Model(inputs=[input1], outputs=[engines])
+        engines = Dense(self.action_space, activation='tanh')(actor_dense2)
 
-        actor.compile(optimizer=Adam(self.alpha), loss='mean_squared_error')
+        critic_output = Dense(1, activation='linear',
+                              kernel_initializer=weights_initializer)(critic_dense2)
+
+        actor = Model(inputs=[state_input, delta], outputs=[engines])
+        policy = Model(inputs=[state_input], outputs=[engines])
+        critic = Model(inputs=[state_input], outputs=[critic_output])
+
+        actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
         critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
-
         plot_model(actor, f"{settings.MODEL_NAME}/model/actor.png")
         plot_model(critic, f"{settings.MODEL_NAME}/model/critic.png")
         plot_model(policy, f"{settings.MODEL_NAME}/model/policy.png")
@@ -125,8 +129,8 @@ class Agent:
         return True
 
     def choose_action_list(self, States):
-        Actions = self.policy.predict(States)
-        return Actions
+        actions = self.policy.predict(States)
+        return actions
 
     def load_model(self):
         if os.path.isfile(f"{settings.MODEL_NAME}/model/actor-weights") and \
@@ -189,8 +193,8 @@ class Agent:
         targets = Rewards + self.gamma * int_dones * future_critic_values
         delta = targets - current_critic_value
 
-        self.critic.fit(Old_states, targets, verbose=0)
         self.actor.fit([Old_states, delta], Actions, verbose=0)
+        self.critic.fit(Old_states, targets, verbose=0)
 
 
 def record_game():
@@ -362,10 +366,8 @@ def training():
 def moving_average(array, window_size=None, multi_agents=1):
     size = len(array)
 
-    if not window_size or window_size and size > window_size:
-        window_size = size // 20
-
-    window_size *= multi_agents
+    if not window_size or window_size and size < window_size:
+        window_size = size // 10
 
     while len(array) % window_size or window_size % multi_agents:
         window_size -= 1
@@ -429,13 +431,13 @@ def plot_results():
         plt.show()
 
     if settings.SOUND_ALERT:
-        os.system("play -nq -t alsa synth 0.3 sine 350")
+        os.system("play -nq -t alsa synth 0.2 sine 550")
 
 
 if __name__ == "__main__":
     config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = False
-    config.gpu_options.per_process_gpu_memory_fraction = 0.3
+    config.gpu_options.per_process_gpu_memory_fraction = 0.2
     sess = tf.compat.v1.Session(config=config)
 
     try:
@@ -446,7 +448,7 @@ if __name__ == "__main__":
     except FileNotFoundError:
         episode_offset = 0
 
-    os.makedirs(f"{settings.MODEL_NAME}/game-{episode_offset}", exist_ok=True)
+    os.makedirs(f"{settings.MODEL_NAME}", exist_ok=True)
 
     "Environment"
     ACTION_SPACE = 2  # Turn left, right or none

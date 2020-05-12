@@ -66,7 +66,7 @@ def record_game():
 if __name__ == "__main__":
     config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = False
-    config.gpu_options.per_process_gpu_memory_fraction = 0.3
+    config.gpu_options.per_process_gpu_memory_fraction = 0.1
     sess = tf.compat.v1.Session(config=config)
 
     try:
