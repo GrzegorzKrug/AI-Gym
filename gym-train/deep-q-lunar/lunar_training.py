@@ -62,6 +62,7 @@ class Agent:
     def create_actor_critic_network(self):
         weights_initializer = RandomUniform(minval=-1, maxval=1)
         state_input = Input(shape=self.input_shape)
+        action_input = Input(shape=(self.action_space,))
 
         delta = Input(shape=(1,))
 
@@ -74,19 +75,19 @@ class Agent:
         actor_dense2 = Dense(self.dense2, activation='relu',
                              kernel_initializer=weights_initializer)(actor_dense1)
 
+        merge1 = concatenate([state_input, action_input])
         critic_dense1 = Dense(self.dense1, activation='relu',
-                              kernel_initializer=weights_initializer)(state_input)
+                              kernel_initializer=weights_initializer)(merge1)
         critic_dense2 = Dense(self.dense2, activation='relu',
                               kernel_initializer=weights_initializer)(critic_dense1)
 
         engines = Dense(self.action_space, activation='tanh')(actor_dense2)
-
         critic_output = Dense(1, activation='linear',
                               kernel_initializer=weights_initializer)(critic_dense2)
 
         actor = Model(inputs=[state_input, delta], outputs=[engines])
         policy = Model(inputs=[state_input], outputs=[engines])
-        critic = Model(inputs=[state_input], outputs=[critic_output])
+        critic = Model(inputs=[state_input, action_input], outputs=[critic_output])
 
         actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
         critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
@@ -180,21 +181,18 @@ class Agent:
             Dones.append(done)
 
         Old_states = np.array(Old_states)
-        New_states = np.array(New_states)
+        # New_states = np.array(New_states)
         Rewards = np.array(Rewards)
         Actions = np.array(Actions)
 
-        current_critic_value = self.critic.predict(Old_states).ravel()
-        future_critic_values = self.critic.predict(New_states).ravel()  # Converting to vector
-        # print()
-        # print(current_critic_value)
-        # print(future_critic_values)
-        int_dones = np.array([*map(lambda x: int(not x), Dones)])
-        targets = Rewards + self.gamma * int_dones * future_critic_values
+        current_critic_value = self.critic.predict([Old_states, Actions]).ravel()
+
+        # int_dones = np.array([*map(lambda x: int(not x), Dones)])
+        targets = Rewards
         delta = targets - current_critic_value
 
         self.actor.fit([Old_states, delta], Actions, verbose=0)
-        self.critic.fit(Old_states, targets, verbose=0)
+        self.critic.fit([Old_states, Actions], targets, verbose=0)
 
 
 def record_game():
