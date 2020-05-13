@@ -23,7 +23,7 @@ class CustomTensorBoard(TensorBoard):
     # Overriding init to set initial step and writer (we want one log file for all .fit() calls)
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.step = 1
+        self.step = 0
         self._log_write_dir = self.log_dir
         self.writer = tf.summary.create_file_writer(self.log_dir)
 
@@ -69,7 +69,8 @@ class Agent:
                  beta,
                  gamma=0.99,
                  dense1=256,
-                 dense2=256):
+                 dense2=256,
+                 episode_offset=0):
 
         dt = datetime.datetime.timetuple(datetime.datetime.now())
         self.runtime_name = f"{dt.tm_mon:>02}-{dt.tm_mday:>02}--" \
@@ -80,7 +81,8 @@ class Agent:
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.custom_tensorboard = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-{self.runtime_name}")
+        self.actor_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-Actor-{episode_offset}")
+        self.critic_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-Critic-{episode_offset}")
 
         if settings.LOAD_MODEL:
             try:
@@ -103,28 +105,28 @@ class Agent:
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
     def create_actor_critic_network(self):
-        weights_initializer = RandomUniform(minval=-1, maxval=1)
+        weights_initializer = RandomUniform(minval=-0.3, maxval=0.3)
         state_input = Input(shape=self.input_shape)
         action_input = Input(shape=(self.action_space,))
 
         delta = Input(shape=(1,))
 
         def custom_loss(y_true, y_pred):
-            out = backend.clip(y_true - y_pred, 1e-8, 1 - 1e8)
-            out = backend.log(out)
-            loss = out * delta
-            return abs(loss)
+            out = y_true - y_pred + delta
+            return abs(backend.sum(out))
 
         actor_dense1 = Dense(self.dense1, activation='relu',
                              kernel_initializer=weights_initializer)(state_input)
+        actor_dense1a = Dropout(0.2)(actor_dense1)
         actor_dense2 = Dense(self.dense2, activation='relu',
-                             kernel_initializer=weights_initializer)(actor_dense1)
+                             kernel_initializer=weights_initializer)(actor_dense1a)
 
         merge1 = concatenate([state_input, action_input])
-        critic_dense1 = Dense(self.dense1, activation='relu',
+        critic_dense1 = Dense(64, activation='relu',
                               kernel_initializer=weights_initializer)(merge1)
-        critic_dense2 = Dense(self.dense2, activation='relu',
-                              kernel_initializer=weights_initializer)(critic_dense1)
+        critic_dense1a = Dropout(0.2)(critic_dense1)
+        critic_dense2 = Dense(64, activation='relu',
+                              kernel_initializer=weights_initializer)(critic_dense1a)
 
         engines = Dense(self.action_space, activation='tanh')(actor_dense2)
         critic_output = Dense(1, activation='linear',
@@ -134,8 +136,8 @@ class Agent:
         policy = Model(inputs=[state_input], outputs=[engines])
         critic = Model(inputs=[state_input, action_input], outputs=[critic_output])
 
-        actor.compile(optimizer=Adam(self.alpha), loss=custom_loss)
-        critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error')
+        actor.compile(optimizer=Adam(self.alpha), loss=custom_loss, metrics=['accuracy'])
+        critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error', metrics=['accuracy'])
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
         plot_model(actor, f"{settings.MODEL_NAME}/model/actor.png")
@@ -233,61 +235,11 @@ class Agent:
         current_critic_value = self.critic.predict([Old_states, Actions]).ravel()
 
         # int_dones = np.array([*map(lambda x: int(not x), Dones)])
-        targets = Rewards
-        delta = targets - current_critic_value
+        delta = Rewards - current_critic_value
+        critic_target = Rewards
 
-        self.actor.fit([Old_states, delta], Actions, verbose=0, callbacks=[self.custom_tensorboard])
-        self.critic.fit([Old_states, Actions], targets, verbose=0)
-
-
-def record_game():
-    render = True
-    Games = []  # Close screen
-    States = []
-    for loop_ind in range(1):
-        game = gym.make('LunarLanderContinuous-v2')
-        state = game.reset()
-        Games.append(game)
-        States.append(state)
-
-    Scores = [0] * len(Games)
-    step = 0
-    All_score = []
-    All_steps = []
-
-    while len(Games):
-        step += 1
-        Old_states = np.array(States)
-        Actions = agent.choose_action_list(Old_states)
-        Dones = []
-        Rewards = []
-        States = []
-
-        for g_index, game in enumerate(Games):
-            # print(Actions[g_index])
-            state, reward, done, info = game.step(action=Actions[g_index])
-            Rewards.append(reward)
-            Scores[g_index] += reward
-            Dones.append(done)
-            States.append(state)
-
-        if render:
-            Games[0].render()
-            array = Games[0].viewer.get_array()
-            cv2.imwrite(f"{settings.MODEL_NAME}/game-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
-
-        for ind_d in range(len(Games) - 1, -1, -1):
-            if Dones[ind_d]:
-                if ind_d == 0 and render:
-                    render = False
-                    Games[0].close()
-
-                All_score.append(Scores[ind_d])
-                All_steps.append(step)
-
-                Scores.pop(ind_d)
-                Games.pop(ind_d)
-                States.pop(ind_d)
+        self.actor.fit([Old_states, delta], Actions, verbose=0, callbacks=[self.actor_tb])
+        self.critic.fit([Old_states, Actions], critic_target, verbose=0, callbacks=[self.critic_tb])
 
 
 def training():
@@ -397,13 +349,15 @@ def training():
         elif settings.TRAIN_MAX_MIN_DURATION and (time_end - time_start) / 60 > settings.TRAIN_MAX_MIN_DURATION:
             emergency_break = True
 
-    print(f"Run ended: {settings.MODEL_NAME}")
+    print(f"Run ended: {settings.MODEL_NAME}-{episode_offset}")
     print(f"Step-Training time elapsed: {(time_end - time_start) / 60:3.1f}m, "
           f"{(time_end - time_start) / (episode + 1):3.1f} s per episode")
 
     if settings.ALLOW_TRAIN:
         agent.save_model()
         np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + 1 + episode_offset)
+
+    return stats
 
 
 def moving_average(array, window_size=None, multi_agents=1):
@@ -432,8 +386,21 @@ def moving_average(array, window_size=None, multi_agents=1):
     return output
 
 
-def plot_results():
+def validate_stats_len(stat_dict):
+    num = len(stat_dict['episode'])
+    num = num % settings.SIM_COUNT
+    if num > 0:
+        stat_dict['episode'] = stat_dict['episode'][:-num]
+        stat_dict['eps'] = stat_dict['eps'][:-num]
+        stat_dict['score'] = stat_dict['score'][:-num]
+        stat_dict['flighttime'] = stat_dict['flighttime'][:-num]
+
+    return stat_dict
+
+
+def plot_results(stats):
     print("Plotting data now...")
+    stats = validate_stats_len(stats)
 
     style.use('ggplot')
     plt.figure(figsize=(20, 11))
@@ -503,11 +470,12 @@ if __name__ == "__main__":
             "score": [],
             "flighttime": []}
 
-    agent = Agent(alpha=1e-5, beta=3e-6, gamma=0.99,
+    agent = Agent(alpha=settings.ALPHA, beta=settings.BETA, gamma=0.99,
                   input_shape=INPUT_SHAPE,
                   action_space=ACTION_SPACE,
                   dense1=settings.DENSE1,
-                  dense2=settings.DENSE2)
+                  dense2=settings.DENSE2,
+                  episode_offset=episode_offset)
 
-    training()
-    plot_results()
+    stats = training()
+    plot_results(stats)

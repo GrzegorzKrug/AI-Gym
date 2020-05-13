@@ -93,5 +93,6 @@ if __name__ == "__main__":
                   input_shape=INPUT_SHAPE,
                   action_space=ACTION_SPACE,
                   dense1=settings.DENSE1,
-                  dense2=settings.DENSE2)
+                  dense2=settings.DENSE2,
+                  episode_offset=episode_offset)
     record_game()
