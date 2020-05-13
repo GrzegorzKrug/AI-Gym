@@ -11,12 +11,54 @@ import os
 
 from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, Input, concatenate
 from keras.models import Model, load_model, Sequential
-from keras.utils import plot_model
 from keras.initializers import RandomUniform
+from keras.callbacks import TensorBoard
+from keras.utils import plot_model
 from keras.optimizers import Adam
-from collections import deque
 from matplotlib import style
 from keras import backend
+
+
+class CustomTensorBoard(TensorBoard):
+    # Overriding init to set initial step and writer (we want one log file for all .fit() calls)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.step = 1
+        self._log_write_dir = self.log_dir
+        self.writer = tf.summary.create_file_writer(self.log_dir)
+
+    # Overriding this method to stop creating default log writer
+    def set_model(self, model):
+        pass
+
+    # Overrided, saves logs with our step number
+    # (otherwise every .fit() will start writing from 0th step)
+    def on_epoch_end(self, epoch, logs=None):
+        self.update_stats(**logs)
+
+    # Overrided
+    # We train for one batch only, no need to save anything at epoch end
+    def on_batch_end(self, batch, logs=None):
+        pass
+
+    # Overrided, so won't close writer
+    def on_train_end(self, _):
+        pass
+
+    def on_train_batch_end(self, batch, logs=None):
+        pass
+
+    # Custom method for saving own metrics
+    # Creates writer, writes custom metrics and closes writer
+    def update_stats(self, **stats):
+        self._write_logs(stats, self.step)
+
+    def _write_logs(self, logs, index):
+        with self.writer.as_default():
+            for name, value in logs.items():
+                tf.summary.scalar(name, value, step=index)
+                self.step += 1
+                self.writer.flush()
 
 
 class Agent:
@@ -38,6 +80,7 @@ class Agent:
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
+        self.custom_tensorboard = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-{self.runtime_name}")
 
         if settings.LOAD_MODEL:
             try:
@@ -67,8 +110,10 @@ class Agent:
         delta = Input(shape=(1,))
 
         def custom_loss(y_true, y_pred):
-            loss = backend.mean(backend.sum(backend.square((y_true - y_pred * delta))))
-            return loss
+            out = backend.clip(y_true - y_pred, 1e-8, 1 - 1e8)
+            out = backend.log(out)
+            loss = out * delta
+            return abs(loss)
 
         actor_dense1 = Dense(self.dense1, activation='relu',
                              kernel_initializer=weights_initializer)(state_input)
@@ -191,7 +236,7 @@ class Agent:
         targets = Rewards
         delta = targets - current_critic_value
 
-        self.actor.fit([Old_states, delta], Actions, verbose=0)
+        self.actor.fit([Old_states, delta], Actions, verbose=0, callbacks=[self.custom_tensorboard])
         self.critic.fit([Old_states, Actions], targets, verbose=0)
 
 
