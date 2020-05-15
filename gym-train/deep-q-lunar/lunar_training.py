@@ -14,6 +14,7 @@ from keras.models import Model, load_model, Sequential
 from keras.initializers import RandomUniform
 from keras.callbacks import TensorBoard
 from keras.utils import plot_model
+from collections import deque
 from keras.optimizers import Adam
 from matplotlib import style
 from keras import backend
@@ -83,6 +84,7 @@ class Agent:
         self.gamma = gamma
         self.actor_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-Actor-{episode_offset}")
         self.critic_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-Critic-{episode_offset}")
+        self.memory = deque(maxlen=settings.MAX_BATCH_SIZE)
 
         if settings.LOAD_MODEL:
             try:
@@ -105,15 +107,18 @@ class Agent:
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
     def create_actor_critic_network(self):
-        weights_initializer = RandomUniform(minval=-0.3, maxval=0.3)
+        weights_initializer = RandomUniform(minval=-0.003, maxval=0.003)
         state_input = Input(shape=self.input_shape)
         action_input = Input(shape=(self.action_space,))
 
         delta = Input(shape=(1,))
 
         def custom_loss(y_true, y_pred):
-            out = y_true - y_pred + delta
-            return abs(backend.sum(out))
+            loss = backend.clip(y_pred, 1e-8, 1 - 1e-8)
+            loss = backend.log(loss) * y_true
+            loss = backend.sum(loss * abs(delta))
+            # loss = abs(loss)
+            return loss
 
         actor_dense1 = Dense(self.dense1, activation='relu',
                              kernel_initializer=weights_initializer)(state_input)
@@ -121,12 +126,14 @@ class Agent:
         actor_dense2 = Dense(self.dense2, activation='relu',
                              kernel_initializer=weights_initializer)(actor_dense1a)
 
-        merge1 = concatenate([state_input, action_input])
-        critic_dense1 = Dense(64, activation='relu',
-                              kernel_initializer=weights_initializer)(merge1)
-        critic_dense1a = Dropout(0.2)(critic_dense1)
-        critic_dense2 = Dense(64, activation='relu',
-                              kernel_initializer=weights_initializer)(critic_dense1a)
+        critic_dense1a = Dense(512, activation='relu',
+                               kernel_initializer=weights_initializer)(state_input)
+        critic_dense1b = Dense(512, activation='relu',
+                               kernel_initializer=weights_initializer)(action_input)
+        merge1 = concatenate([critic_dense1a, critic_dense1b])
+        critic_drop = Dropout(0.2)(merge1)
+        critic_dense2 = Dense(512, activation='relu',
+                              kernel_initializer=weights_initializer)(critic_drop)
 
         engines = Dense(self.action_space, activation='tanh')(actor_dense2)
         critic_output = Dense(1, activation='linear',
@@ -137,7 +144,7 @@ class Agent:
         critic = Model(inputs=[state_input, action_input], outputs=[critic_output])
 
         actor.compile(optimizer=Adam(self.alpha), loss=custom_loss, metrics=['accuracy'])
-        critic.compile(optimizer=Adam(self.beta), loss='mean_squared_error', metrics=['accuracy'])
+        critic.compile(optimizer=Adam(self.beta), loss='mse', metrics=['accuracy'])
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
         plot_model(actor, f"{settings.MODEL_NAME}/model/actor.png")
@@ -209,8 +216,18 @@ class Agent:
         else:
             return False
 
-    def train(self, train_data):
-        self.actor_critic_train(train_data)
+    def train(self):
+        if len(self.memory) < settings.MIN_BATCH_SIZE:
+            return None
+        elif len(self.memory) > settings.MAX_BATCH_SIZE:
+            data = random.sample(self.memory, settings.MAX_BATCH_SIZE)
+            self.actor_critic_train(data)
+        else:
+            self.actor_critic_train(list(self.memory))
+        self.memory.clear()
+
+    def add_memmory(self, data):
+        self.memory.append(data)
 
     def actor_critic_train(self, train_data):
         Old_states = []
@@ -219,8 +236,7 @@ class Agent:
         Dones = []
         Actions = []
 
-        for old_state, action, reward, new_state, done in zip(train_data[0], train_data[1], train_data[2],
-                                                              train_data[3], train_data[4]):
+        for old_state, action, reward, new_state, done in train_data:
             Old_states.append(old_state)
             New_states.append(new_state)
             Actions.append(action)
@@ -228,18 +244,17 @@ class Agent:
             Dones.append(done)
 
         Old_states = np.array(Old_states)
-        # New_states = np.array(New_states)
         Rewards = np.array(Rewards)
         Actions = np.array(Actions)
 
-        current_critic_value = self.critic.predict([Old_states, Actions]).ravel()
+        # current_critic_value = self.critic.predict([Old_states, Actions]).ravel()
 
         # int_dones = np.array([*map(lambda x: int(not x), Dones)])
-        delta = Rewards - current_critic_value
-        critic_target = Rewards
+        # delta = Rewards - current_critic_value * 0.97
+        # critic_target = Rewards
 
-        self.actor.fit([Old_states, delta], Actions, verbose=0, callbacks=[self.actor_tb])
-        self.critic.fit([Old_states, Actions], critic_target, verbose=0, callbacks=[self.critic_tb])
+        self.actor.fit([Old_states, -Rewards], Actions, verbose=0, callbacks=[self.actor_tb])
+        self.critic.fit([Old_states, Actions], Rewards, verbose=0, callbacks=[self.critic_tb])
 
 
 def training():
@@ -264,8 +279,6 @@ def training():
                 render = True
             elif episode < settings.EPS_INTERVAL / 4:
                 eps = settings.FIRST_EPS
-            # elif episode < EPS_INTERVAL:
-            #     eps = 0.3
             else:
                 try:
                     eps = next(eps_iter)
@@ -311,8 +324,9 @@ def training():
                     time.sleep(settings.RENDER_DELAY)
 
                 if settings.ALLOW_TRAIN:
-                    train_data = (Old_states, Actions, Rewards, States, Dones)
-                    agent.train(train_data)
+                    for old_s, act, rew, st, don in zip(Old_states, Actions, Rewards, States, Dones):
+                        agent.add_memmory((old_s, act, rew, st, don))
+                    agent.train()
                     if not (episode + episode_offset) % 25 and episode > 0:
                         agent.save_model()
                         np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
