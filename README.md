@@ -27,6 +27,7 @@ pip install -r requirements.txt
 
 #### Current Scopes:
 * LunarLanderContinuous-v2 
+* Chess environemnt
 
 
 
