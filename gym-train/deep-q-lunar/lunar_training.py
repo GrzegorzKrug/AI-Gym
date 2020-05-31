@@ -93,11 +93,13 @@ class Agent:
             try:
                 layers = np.load(f"{settings.MODEL_NAME}/model/layers.npy", allow_pickle=True)
                 self.dense1, self.dense2, self.dropout_actor, self.dropout_critic = layers
-                print(f"Loaded layers shapes: {settings.MODEL_NAME}")
-            except FileNotFoundError:
+                print(f"Loaded layers shapes: {settings.MODEL_NAME}: {layers}")
 
+            except FileNotFoundError:
                 self.dense1, self.dense2 = dense1, dense2
                 self.dropout_actor, self.dropout_critic = dropout_actor, dropout_critic
+            self.dense1, self.dense2 = int(self.dense1), int(self.dense2)
+            self.dropout_actor, self.dropout_critic = float(self.dropout_actor), float(self.dropout_critic)
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
             loaded = self.load_model()
             if loaded:
@@ -119,16 +121,20 @@ class Agent:
         delta = Input(shape=(1,))
 
         def custom_loss(y_true, y_pred):
-            loss = y_true - (y_pred * delta) / 1000
-            loss = backend.abs(loss)
-            loss = backend.sum(loss)
+            """RNG based on delta input"""
+            err = backend.abs(delta)
+            tan_error = backend.tanh(err) / 6
+            loss = y_pred * 0 + tan_error
+            # loss = backend.abs(loss)
+            loss = backend.mean(loss)
             return loss
 
-        actor_dense1 = Dense(self.dense1, activation='relu',
-                             kernel_initializer=weights_initializer)(state_input)
-        actor_dense1a = Dropout(self.dropout_actor)(actor_dense1)
-        actor_dense2 = Dense(self.dense2, activation='relu',
-                             kernel_initializer=weights_initializer)(actor_dense1a)
+        actor_1_dense = Dense(self.dense1, activation='relu',
+                              kernel_initializer=weights_initializer)(state_input)
+        actor_2_drop = Dropout(self.dropout_actor)(actor_1_dense)
+
+        actor_3_dense = Dense(self.dense2, activation='relu',
+                              kernel_initializer=weights_initializer)(actor_2_drop)
 
         critic_inputa = Dense(512, activation='relu',
                               kernel_initializer=weights_initializer)(state_input)
@@ -139,7 +145,7 @@ class Agent:
         critic_dense2 = Dense(512, activation='relu',
                               kernel_initializer=weights_initializer)(critic_drop)
 
-        engines = Dense(self.action_space, activation='tanh')(actor_dense2)
+        engines = Dense(self.action_space, activation='tanh')(actor_3_dense)
         critic_output = Dense(1, activation='linear',
                               kernel_initializer=weights_initializer)(critic_dense2)
 
@@ -185,7 +191,8 @@ class Agent:
             except OSError:
                 time.sleep(0.2)
         np.save(f"{settings.MODEL_NAME}/model/layers.npy",
-                (self.dense1, self.dense2, self.dropout_actor, self.dropout_critic))
+                (self.dense1, self.dense2, self.dropout_actor, self.dropout_critic)
+                )
         return True
 
     def choose_action_list(self, States):
@@ -222,6 +229,7 @@ class Agent:
             return False
 
     def train(self):
+        """Train model if memory is at minimum size"""
         if len(self.memory) < settings.MIN_BATCH_SIZE:
             return None
         elif len(self.memory) > settings.MAX_BATCH_SIZE:
