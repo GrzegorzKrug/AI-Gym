@@ -107,30 +107,29 @@ class Agent:
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
     def create_actor_critic_network(self):
-        weights_initializer = RandomUniform(minval=-0.003, maxval=0.003)
+        weights_initializer = RandomUniform(minval=-0.001, maxval=0.001)
         state_input = Input(shape=self.input_shape)
         action_input = Input(shape=(self.action_space,))
 
         delta = Input(shape=(1,))
 
         def custom_loss(y_true, y_pred):
-            loss = backend.clip(y_pred, 1e-8, 1 - 1e-8)
-            loss = backend.log(loss) * y_true
-            loss = backend.sum(loss * abs(delta))
-            # loss = abs(loss)
+            loss = y_true - (y_pred * delta) / 1000
+            loss = backend.abs(loss)
+            loss = backend.sum(loss)
             return loss
 
         actor_dense1 = Dense(self.dense1, activation='relu',
                              kernel_initializer=weights_initializer)(state_input)
-        actor_dense1a = Dropout(0.2)(actor_dense1)
+        actor_dense1a = Dropout(0.1)(actor_dense1)
         actor_dense2 = Dense(self.dense2, activation='relu',
                              kernel_initializer=weights_initializer)(actor_dense1a)
 
-        critic_dense1a = Dense(512, activation='relu',
-                               kernel_initializer=weights_initializer)(state_input)
-        critic_dense1b = Dense(512, activation='relu',
-                               kernel_initializer=weights_initializer)(action_input)
-        merge1 = concatenate([critic_dense1a, critic_dense1b])
+        critic_inputa = Dense(512, activation='relu',
+                              kernel_initializer=weights_initializer)(state_input)
+        critic_inputb = Dense(512, activation='relu',
+                              kernel_initializer=weights_initializer)(action_input)
+        merge1 = concatenate([critic_inputa, critic_inputb])
         critic_drop = Dropout(0.2)(merge1)
         critic_dense2 = Dense(512, activation='relu',
                               kernel_initializer=weights_initializer)(critic_drop)
@@ -144,7 +143,7 @@ class Agent:
         critic = Model(inputs=[state_input, action_input], outputs=[critic_output])
 
         actor.compile(optimizer=Adam(self.alpha), loss=custom_loss, metrics=['accuracy'])
-        critic.compile(optimizer=Adam(self.beta), loss='mse', metrics=['accuracy'])
+        critic.compile(optimizer=Adam(self.beta), loss='mae', metrics=['accuracy'])
 
         os.makedirs(f"{settings.MODEL_NAME}/model", exist_ok=True)
         plot_model(actor, f"{settings.MODEL_NAME}/model/actor.png")
@@ -224,7 +223,8 @@ class Agent:
             self.actor_critic_train(data)
         else:
             self.actor_critic_train(list(self.memory))
-        self.memory.clear()
+        if settings.CLEAR_MEMORY_AFTER_TRAIN:
+            self.memory.clear()
 
     def add_memmory(self, data):
         self.memory.append(data)
@@ -247,25 +247,28 @@ class Agent:
         Rewards = np.array(Rewards)
         Actions = np.array(Actions)
 
-        # current_critic_value = self.critic.predict([Old_states, Actions]).ravel()
+        future_actions = self.policy.predict([New_states])
+        current_critic_value = self.critic.predict([Old_states, Actions]).ravel()
+        future_critic_values = self.critic.predict([New_states, future_actions]).ravel()
 
-        # int_dones = np.array([*map(lambda x: int(not x), Dones)])
-        # delta = Rewards - current_critic_value * 0.97
-        # critic_target = Rewards
+        actor_delta = abs(200 - current_critic_value)
+        critic_target = Rewards + self.gamma * future_critic_values
 
-        self.actor.fit([Old_states, -Rewards], Actions, verbose=0, callbacks=[self.actor_tb])
-        self.critic.fit([Old_states, Actions], Rewards, verbose=0, callbacks=[self.critic_tb])
+        self.actor.fit([Old_states, actor_delta], Actions, verbose=0, callbacks=[self.actor_tb])
+        self.critic.fit([Old_states, Actions], critic_target, verbose=0, callbacks=[self.critic_tb])
 
 
 def training():
     eps_iter = iter(np.linspace(settings.RAMP_EPS, settings.END_EPS, settings.EPS_INTERVAL))
     time_start = time.time()
+    draw_timer = time.time()
     emergency_break = False
 
     for episode in range(0, settings.EPOCHS):
         try:
-            if not (episode + episode_offset) % settings.SHOW_EVERY:
+            if time.time() > draw_timer + settings.SHOW_EVERY_MINUTE * 60:
                 render = True
+                draw_timer = time.time()
             else:
                 render = False
 
@@ -285,6 +288,9 @@ def training():
                 except StopIteration:
                     eps_iter = iter(np.linspace(settings.INITIAL_SMALL_EPS, settings.END_EPS, settings.EPS_INTERVAL))
                     eps = next(eps_iter)
+
+            if render and settings.RENDER_WITH_ZERO_EPS:
+                eps = 0
 
             Games = []  # Close screen
             States = []
@@ -484,7 +490,7 @@ if __name__ == "__main__":
             "score": [],
             "flighttime": []}
 
-    agent = Agent(alpha=settings.ALPHA, beta=settings.BETA, gamma=0.99,
+    agent = Agent(alpha=settings.ALPHA, beta=settings.BETA, gamma=settings.GAMMA,
                   input_shape=INPUT_SHAPE,
                   action_space=ACTION_SPACE,
                   dense1=settings.DENSE1,
