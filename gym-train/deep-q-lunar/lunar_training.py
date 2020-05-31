@@ -71,6 +71,8 @@ class Agent:
                  gamma=0.99,
                  dense1=256,
                  dense2=256,
+                 dropout_actor=0.2,
+                 dropout_critic=0.2,
                  episode_offset=0):
 
         dt = datetime.datetime.timetuple(datetime.datetime.now())
@@ -82,18 +84,20 @@ class Agent:
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.actor_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-Actor-{episode_offset}")
-        self.critic_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-Critic-{episode_offset}")
+        if settings.ALLOW_TRAIN:
+            self.actor_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-{episode_offset}-Actor")
+            self.critic_tb = CustomTensorBoard(log_dir=f"tensorlogs/{settings.MODEL_NAME}-{episode_offset}-Critic")
         self.memory = deque(maxlen=settings.MAX_BATCH_SIZE)
 
         if settings.LOAD_MODEL:
             try:
                 layers = np.load(f"{settings.MODEL_NAME}/model/layers.npy", allow_pickle=True)
-                self.dense1, self.dense2 = layers
+                self.dense1, self.dense2, self.dropout_actor, self.dropout_critic = layers
                 print(f"Loaded layers shapes: {settings.MODEL_NAME}")
             except FileNotFoundError:
 
                 self.dense1, self.dense2 = dense1, dense2
+                self.dropout_actor, self.dropout_critic = dropout_actor, dropout_critic
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
             loaded = self.load_model()
             if loaded:
@@ -103,6 +107,7 @@ class Agent:
 
         else:
             self.dense1, self.dense2 = dense1, dense2
+            self.dropout_actor, self.dropout_critic = dropout_actor, dropout_critic
             print(f"New model: {settings.MODEL_NAME}")
             self.actor, self.critic, self.policy = self.create_actor_critic_network()
 
@@ -121,7 +126,7 @@ class Agent:
 
         actor_dense1 = Dense(self.dense1, activation='relu',
                              kernel_initializer=weights_initializer)(state_input)
-        actor_dense1a = Dropout(0.1)(actor_dense1)
+        actor_dense1a = Dropout(self.dropout_actor)(actor_dense1)
         actor_dense2 = Dense(self.dense2, activation='relu',
                              kernel_initializer=weights_initializer)(actor_dense1a)
 
@@ -130,7 +135,7 @@ class Agent:
         critic_inputb = Dense(512, activation='relu',
                               kernel_initializer=weights_initializer)(action_input)
         merge1 = concatenate([critic_inputa, critic_inputb])
-        critic_drop = Dropout(0.2)(merge1)
+        critic_drop = Dropout(self.dropout_critic)(merge1)
         critic_dense2 = Dense(512, activation='relu',
                               kernel_initializer=weights_initializer)(critic_drop)
 
@@ -179,7 +184,8 @@ class Agent:
                 break
             except OSError:
                 time.sleep(0.2)
-        np.save(f"{settings.MODEL_NAME}/model/layers.npy", (self.dense1, self.dense2))
+        np.save(f"{settings.MODEL_NAME}/model/layers.npy",
+                (self.dense1, self.dense2, self.dropout_actor, self.dropout_critic))
         return True
 
     def choose_action_list(self, States):
@@ -495,6 +501,8 @@ if __name__ == "__main__":
                   action_space=ACTION_SPACE,
                   dense1=settings.DENSE1,
                   dense2=settings.DENSE2,
+                  dropout_actor=settings.DROPOUT1,
+                  dropout_critic=settings.DROPOUT2,
                   episode_offset=episode_offset)
 
     stats = training()

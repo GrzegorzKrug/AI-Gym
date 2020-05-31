@@ -16,10 +16,13 @@ CLEAR_MEMORY_AFTER_TRAIN = True
 ALLOW_TRAIN = True
 LOAD_MODEL = True
 
-MODEL_NAME = f"Model-18"
+MODEL_NAME = f"Model-1"
 
 DENSE1 = 512
 DENSE2 = 512
+DROPOUT1 = 0.05
+DROPOUT2 = 0.2
+
 # Training params
 ALPHA = 1e-5
 BETA = 1e-4
