@@ -1,5 +1,7 @@
-# A2C
+#
 ## Actor Critic Algorithm with connected nodes
+
+There is no advantage function
 
 Both models, actor and critic, share common nodes `Dense1` and `Dense2`
 
