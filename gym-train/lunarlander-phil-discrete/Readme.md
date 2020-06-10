@@ -12,11 +12,12 @@ Both models, actor and critic, share common nodes `Dense1` and `Dense2`
 ![image](./Model-29/scores-06-10--16-29-00.png)
 
 
-### Landing video
+### Landing gifs
+##### Game 287
+![Landing](./Model-29/replay-Model-29-287.gif)
+##### Game 367
+![Landing](./Model-29/replay-Model-29-367.gif)
 
-[Youtube](https://youtu.be/IeuL82qYqQk)
-    
-    
     
 #### Tutorial link
 
