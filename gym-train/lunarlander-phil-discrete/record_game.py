@@ -47,7 +47,7 @@ def record_game():
         if render:
             Games[0].render()
             array = Games[0].viewer.get_array()
-            cv2.imwrite(f"{settings.MODEL_NAME}/game-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
+            cv2.imwrite(f"{settings.MODEL_NAME}/replay-{settings.MODEL_NAME}-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
 
         for ind_d in range(len(Games) - 1, -1, -1):
             if Dones[ind_d]:
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     except FileNotFoundError:
         episode_offset = 0
 
-    os.makedirs(f"{settings.MODEL_NAME}/game-{episode_offset}", exist_ok=True)
+    os.makedirs(f"{settings.MODEL_NAME}/replay-{settings.MODEL_NAME}-{episode_offset}", exist_ok=True)
 
     stats = {
             "episode": [],
