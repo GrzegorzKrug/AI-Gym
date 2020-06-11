@@ -260,7 +260,9 @@ class Agent:
 
     def train(self):
         """Train model if memory is at minimum size"""
-        if len(self.memory) < settings.MIN_BATCH_SIZE:
+        if not settings.STEP_TRAIN:
+            self.actor_critic_train(list(self.memory))
+        elif len(self.memory) < settings.MIN_BATCH_SIZE:
             return None
         elif len(self.memory) > settings.MAX_BATCH_SIZE:
             data = random.sample(self.memory, settings.MAX_BATCH_SIZE)
@@ -358,10 +360,8 @@ def training():
                 if settings.ALLOW_TRAIN:
                     for old_s, act, rew, st, don in zip(Old_states, Actions, Rewards, States, Dones):
                         agent.add_memmory((old_s, act, rew, st, don))
-                    agent.train()
-                    if not (episode + episode_offset) % 5 and episode > 0:
-                        agent.save_model()
-                        np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
+                    if settings.STEP_TRAIN:
+                        agent.train()
 
                 for ind_d in range(len(Games) - 1, -1, -1):
                     if Dones[ind_d] or stop_loop:
@@ -380,6 +380,13 @@ def training():
                         Scores.pop(ind_d)
                         Games.pop(ind_d)
                         States.pop(ind_d)
+
+            if not settings.STEP_TRAIN and settings.ALLOW_TRAIN:
+                agent.train()
+
+            if not (episode + episode_offset) % 5 and episode > 0 and settings.ALLOW_TRAIN:
+                agent.save_model()
+                np.save(f"{settings.MODEL_NAME}/last-episode-num.npy", episode + episode_offset)
 
         except KeyboardInterrupt:
             emergency_break = True
