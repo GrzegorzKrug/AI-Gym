@@ -3,7 +3,7 @@
 
 There is no advantage function
 
-This project proves, that we can solve proble with using 2 different models, that models `critic` and `actor` do not share any nodes except `input`.
+This project proves, that we can solve problem using 2 different models, these models `critic` and `actor` do not share any nodes except `input`.
 Disadvantage to this is that both models detects different features from input, but agent model can be smaller.
 
 ![Nodes](./Model-39/model/actor.png) ![Nodes](./Model-39/model/critic.png)
