@@ -9,6 +9,9 @@ Disadvantage to this is that both models detects different features from input, 
 ![Nodes](./Model-39/model/actor.png) ![Nodes](./Model-39/model/critic.png)
 
 ### Log probabilty
+
+Good moves increases probabilty of selecting this action, when bad moves are decreasing
+
 ![image](./action_probabilty.gif)
 
 
