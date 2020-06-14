@@ -33,7 +33,7 @@ Agents is learning to land
 
 ![Landing](./Model-39/replay-Model-39-100.gif)
 ##### Game 120
-Agent is optimizing trajectory
+Agent is optimizing trajectory (and crashing sometimes)
 
 ![Landing](./Model-39/replay-Model-39-120.gif)
 
