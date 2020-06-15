@@ -9,8 +9,8 @@ import gym
 import cv2
 import os
 
-from matplotlib import style
-from lunar_training import Agent
+# from matplotlib import style
+from lunar_discrete import Agent
 
 
 def record_game():
@@ -18,7 +18,7 @@ def record_game():
     Games = []  # Close screen
     States = []
     for loop_ind in range(1):
-        game = gym.make('LunarLanderContinuous-v2')
+        game = gym.make('LunarLander-v2')
         state = game.reset()
         Games.append(game)
         States.append(state)
@@ -47,7 +47,8 @@ def record_game():
         if render:
             Games[0].render()
             array = Games[0].viewer.get_array()
-            cv2.imwrite(f"{settings.MODEL_NAME}/game-{episode_offset}/{step}.png", array[:, :, [2, 1, 0]])
+            cv2.imwrite(f"{settings.MODEL_NAME}/replay-{settings.MODEL_NAME}-{episode_offset}/{step}.png",
+                        array[:, :, [2, 1, 0]])
 
         for ind_d in range(len(Games) - 1, -1, -1):
             if Dones[ind_d]:
@@ -77,11 +78,7 @@ if __name__ == "__main__":
     except FileNotFoundError:
         episode_offset = 0
 
-    os.makedirs(f"{settings.MODEL_NAME}/game-{episode_offset}", exist_ok=True)
-
-    "Environment"
-    ACTION_SPACE = 2  # Turn left, right or none
-    INPUT_SHAPE = (8,)
+    os.makedirs(f"{settings.MODEL_NAME}/replay-{settings.MODEL_NAME}-{episode_offset}", exist_ok=True)
 
     stats = {
             "episode": [],
@@ -90,9 +87,11 @@ if __name__ == "__main__":
             "flighttime": []}
 
     agent = Agent(alpha=1e-5, beta=3e-6, gamma=0.99,
-                  input_shape=INPUT_SHAPE,
-                  action_space=ACTION_SPACE,
+                  input_shape=settings.INPUT_SHAPE,
+                  action_space=settings.ACTION_SPACE,
                   dense1=settings.DENSE1,
                   dense2=settings.DENSE2,
-                  episode_offset=episode_offset)
+                  episode_offset=episode_offset,
+                  record_game=True)
     record_game()
+    print(f"Replay saved: {settings.MODEL_NAME}, episode: {episode_offset}")
