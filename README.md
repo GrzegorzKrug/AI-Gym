@@ -16,6 +16,11 @@ Use and learn various technologies and techniques in areas:
 3. [Fruits in RGB classification](gym-train/classification/fruits)
 
 4. [Deep Q-learning mountain Cart](gym-train/sentdex/deep-qlearning)
+
+5. [Lunar Lander ActorCritic (connected models)](gym-train/lunarlander-phil-discrete)
+
+6. [Lunar Lander ActorCritic (separate models)](gym-train/lunarlander-discrete)
+
 ### Environment setup
 `Python 3.7.7`
 ```
