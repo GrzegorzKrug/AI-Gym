@@ -34,6 +34,7 @@ pip install -r requirements.txt
 * LunarLanderContinuous-v2 
 * Chess environemnt
 
+![image](./gym-train/lunarlander-discrete/action_probabilty.gif)
 
 
 
