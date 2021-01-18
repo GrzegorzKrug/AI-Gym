@@ -7,7 +7,11 @@ import random
 import time
 import os
 
-from keras.layers import Dense, Flatten, Softmax, Input, concatenate, Conv2D, MaxPool2D
+from keras.layers import (
+    Dense, Flatten, Dropout,
+    Conv2D, MaxPool2D,
+    Softmax, Input, concatenate,
+)
 from keras.models import Sequential, load_model, Model
 from keras.initializers import RandomUniform
 from keras.callbacks import TensorBoard
@@ -16,6 +20,7 @@ from keras.optimizers import Adam
 from collections import deque
 from matplotlib import style
 from keras import backend
+from copy import deepcopy
 
 
 class CustomTensorBoard(TensorBoard):
@@ -63,12 +68,9 @@ class CustomTensorBoard(TensorBoard):
 class FlexConvModel:
     def __init__(
             self,
-            input_shape,
-            output_shape,
-            output_method="linear",
-            conv_shapes=None,
+            /,
             node_shapes=None,
-
+            compiler=None,
             memory_size=10_000,
 
             alpha=0.99,
@@ -81,11 +83,8 @@ class FlexConvModel:
                             f"{dt.tm_hour:>02}-{dt.tm_min:>02}-{dt.tm_sec:>02}"
         self.name = settings.MODEL_NAME
 
-        self.input_shape = input_shape
-        self.output_shape = output_shape
-        self.output_method = output_method
-        self.conv_shapes = conv_shapes
         self.node_shapes = node_shapes
+        self.compiler = compiler
         self.memory_size = memory_size
 
         self.alpha = alpha
@@ -94,14 +93,13 @@ class FlexConvModel:
 
         self.memory = deque(maxlen=memory_size)
         self.model = None
+        self.make_model_dir()
 
         if settings.LOAD_MODEL:
             self.load_model()
         else:
             self.make_model()
             print(f"New model: {settings.MODEL_NAME}")
-
-        self.make_model_dir()
 
     def make_model_dir(self):
         os.makedirs(os.path.dirname(self.path_params), exist_ok=True)
@@ -113,7 +111,7 @@ class FlexConvModel:
         Returns:
 
         """
-        return self.input_shape, self.output_shape, self.output_method, self.conv_shapes, self.node_shapes
+        return self.node_shapes, self.compiler
 
     @params.setter
     def params(self, new_params):
@@ -122,23 +120,24 @@ class FlexConvModel:
         Returns:
 
         """
-        self.input_shape, self.output_shape, self.output_method, self.conv_shapes, self.node_shapes = new_params
+        self.node_shapes, self.compiler = new_params
 
     def load_model(self):
         print(f"Loading model {self.name}")
         self._load_params()
+        self.make_model()
         self.load_model_weights()
         self._load_memory()
-        self.make_model()
 
     def make_model(self):
-        pass
+        raise NotImplemented("Define method in your subclass")
 
     def _load_params(self):
         try:
             pars = np.load(self.path_params, allow_pickle=True)
             self.params = pars
             print(f"Loading params {self.path_params}")
+            print(self.params)
         except FileNotFoundError:
             print(f"Not found params to load {self.path_params}")
 
@@ -158,39 +157,6 @@ class FlexConvModel:
     def _save_memory(self):
         np.save(self.path_memory, self.memory)
         print(f"Saving memory {self.path_memory}")
-
-        # def actor_critic_train(self, train_data):
-        #     Old_states = []
-        #     New_states = []
-        #     Rewards = []
-        #     Dones = []
-        #     Actions = []
-        #
-        #     for old_state, action, reward, new_state, done in train_data:
-        #         Old_states.append(old_state)
-        #         New_states.append(new_state)
-        #         Actions.append(action)
-        #         Rewards.append(reward)
-        #         Dones.append(int(not done))
-        #
-        #     Old_states = np.array(Old_states)
-        #     Rewards = np.array(Rewards)
-        #     Actions = np.array(Actions)
-        #     Dones = np.array(Dones)
-        #
-        #     current_critic_value = self.critic.predict([Old_states]).ravel()
-        # future_actions = self.choose_action_list([New_states])
-        # future_critic_values = self.critic.predict([New_states]).ravel()
-        #
-        # target = Rewards + self.gamma * future_critic_values * Dones
-        # delta = target - current_critic_value
-        # target_actions = np.zeros((len(Actions), self.action_space))
-        #
-        # for ind, act in enumerate(Actions):
-        #     target_actions[ind][act] = 1
-        #
-        # self.actor.fit([Old_states, delta], target_actions, verbose=0, callbacks=[self.actor_tb])
-        # self.critic.fit([Old_states], target, verbose=0, callbacks=[self.critic_tb])
 
     @property
     def path_model_weights(self):
@@ -229,7 +195,8 @@ class FlexConvModel:
 
     @staticmethod
     def _load_weights(mod, path):
-        f1 = os.path.isfile(path)
+        check_path = path + ".index"
+        f1 = os.path.isfile(check_path)
         if f1:
             while True:
                 try:
@@ -255,18 +222,48 @@ class FlexConvModel:
 
 class DQNAgent(FlexConvModel):
     def make_model(self):
-        pass
+        print(f"Creating dqn model {self.name}")
+        layers = []
+        CFG = deepcopy(self.node_shapes)
+        for cfg in CFG:
+            node = cfg.pop('node', None)
+            args = cfg.pop('args', ())
+            kwargs = cfg
+
+            if not node:
+                raise ValueError("Empty node value")
+            node = node.lower()
+            print(f"Adding {node:>10}, Args: {args}, Kwargs: {kwargs}")
+
+            if node == 'conv2d':
+                lay = Conv2D(*args, **kwargs)
+            elif node == 'dense':
+                lay = Dense(*args, **kwargs)
+            elif node == "maxpool":
+                lay = MaxPool2D(*args, **kwargs)
+            elif node == "dropout":
+                lay = Dropout(*args, **kwargs)
+            elif node == "input":
+                lay = Input(*args, **kwargs)
+            elif node == 'flatten':
+                lay = Flatten()
+            else:
+                raise ValueError(f"Unknown layer type: {node}")
+
+            layers.append(lay)
+
+        model = Sequential(layers)
+        model.compile(**self.compiler)
+        # print(model.summary())
+        self.model = model
 
     def train(self):
         pass
 
 
 agent = DQNAgent(
-        input_shape=settings.INPUT_SHAPE,
-        output_shape=settings.OUTPUT_SHAPE,
-        conv_shapes=settings.CONV_SHAPES,
         node_shapes=settings.NODE_SHAPES,
-
+        compiler=settings.COMPILER,
 )
 
 agent.save_model()
