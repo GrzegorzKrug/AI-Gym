@@ -2,7 +2,7 @@ MODEL_NAME = f"model_0"
 
 NODE_SHAPES = [
         {'node': "conv2d", 'filters': 64, 'kernel_size': (3, 3), 'activation': 'relu',
-         'input_shape': (365, 365, 3,)},
+         'input_shape': (100, 100, 3,)},
         {'node': "maxpool", 'pool_size': (2, 2)},
         {'node': "dropout", 'args': (0.1,)},
         {'node': "conv2d", 'filters': 64, 'kernel_size': (3, 3), 'activation': 'relu'},

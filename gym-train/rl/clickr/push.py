@@ -1,69 +1,30 @@
 from PIL import ImageGrab, ImageFilter
 
-import tensorflow
-import keras
+from mouse_control import Mouse
 
 import win32api as wapi
-import keyboard
-import numpy as np
-import time
-import cv2
-
-from scipy import signal
-
 import pyautogui
 import ctypes
 import mouse
+import numpy as np
+import time
+import cv2
+import os
+
+TEMPLATES = [
+        None,
+        os.path.abspath(os.path.join("patterns", "red.png")),
+        os.path.abspath(os.path.join("patterns", "green.png")),
+        os.path.abspath(os.path.join("patterns", "green_bonus.png")),
+        os.path.abspath(os.path.join("patterns", "blue.png")),
+        os.path.abspath(os.path.join("patterns", "star.png")),
+        os.path.abspath(os.path.join("patterns", "stone.png")),
+]
+TEMPLATES = [cv2.imread(path) if path else None for path in TEMPLATES]
+INTERVAL = 5
 
 
-
-class Mouse:
-    """It simulates the mouse"""
-    MOUSEEVENTF_MOVE = 0x0001  # mouse move
-    MOUSEEVENTF_LEFTDOWN = 0x0002  # left button down
-    MOUSEEVENTF_LEFTUP = 0x0004  # left button up
-    MOUSEEVENTF_RIGHTDOWN = 0x0008  # right button down
-    MOUSEEVENTF_RIGHTUP = 0x0010  # right button up
-    MOUSEEVENTF_MIDDLEDOWN = 0x0020  # middle button down
-    MOUSEEVENTF_MIDDLEUP = 0x0040  # middle button up
-    MOUSEEVENTF_WHEEL = 0x0800  # wheel button rolled
-    MOUSEEVENTF_ABSOLUTE = 0x8000  # absolute move
-    SM_CXSCREEN = 0
-    SM_CYSCREEN = 1
-
-    def _do_event(self, flags, x_pos, y_pos, data, extra_info):
-        """generate a mouse event"""
-        x_calc = 65536 * x_pos / ctypes.windll.user32.GetSystemMetrics(self.SM_CXSCREEN) + 1
-        y_calc = 65536 * y_pos / ctypes.windll.user32.GetSystemMetrics(self.SM_CYSCREEN) + 1
-        return ctypes.windll.user32.mouse_event(flags, x_calc, y_calc, data, extra_info)
-
-    def _get_button_value(self, button_name, button_up=False):
-        """convert the name of the button into the corresponding value"""
-        buttons = 0
-        if button_name.find("right") >= 0:
-            buttons = self.MOUSEEVENTF_RIGHTDOWN
-        if button_name.find("left") >= 0:
-            buttons = buttons + self.MOUSEEVENTF_LEFTDOWN
-        if button_name.find("middle") >= 0:
-            buttons = buttons + self.MOUSEEVENTF_MIDDLEDOWN
-        if button_up:
-            buttons = buttons << 1
-        return buttons
-
-    def move_mouse(self, pos):
-        """move the mouse to the specified coordinates"""
-        (x, y) = pos
-        old_pos = self.get_position()
-        x = x if (x != -1) else old_pos[0]
-        y = y if (y != -1) else old_pos[1]
-        self._do_event(self.MOUSEEVENTF_MOVE + self.MOUSEEVENTF_ABSOLUTE, x, y, 0, 0)
-
-    def click(self, pos=(-1, -1), button_name="left"):
-        """Click at the specified placed"""
-        # self.move_mouse(pos)
-        self._do_event(self._get_button_value(button_name, False) \
-                       + self._get_button_value(button_name, True),
-                       0, 0, 0, 0)
+# TEMPLATES = [cv2.blur(img, (15, 15)) if img is not None else None for img in TEMPLATES]
 
 
 def timeit(func):
@@ -129,14 +90,15 @@ class Colors:
 
 def click():
     ctypes.windll.user32.mouse_event(Mouse.MOUSEEVENTF_LEFTDOWN)
-    time.sleep(0.08)
+    time.sleep(0.005)
     ctypes.windll.user32.mouse_event(Mouse.MOUSEEVENTF_LEFTUP)
-    time.sleep(0.01)  # Click speed
+    # time.sleep(0.005)  # Click speed
 
 
 @timeit
 def main():
     window = locate_click()
+    window.activate()
     left = window.left  # + 3
     top = window.top  # + 1
 
@@ -144,6 +106,7 @@ def main():
     width = 1030 - 10
 
     bbox = [220, 585, 625, 990]
+    board_size = bbox[1] - bbox[0], bbox[3] - bbox[2]
     size = 15
 
     yticks = np.linspace(bbox[0] + size + 14, bbox[1] - size - 5, 8, dtype=int) - bbox[0]
@@ -153,21 +116,33 @@ def main():
     screen_xticks = np.linspace(bbox[2] + 20, bbox[3] - 15, 8) + left
 
     run = 0
+    prev_click_pos = 0, 0
+    click_pos = 0, 0
     acts = get_action(screen_xticks, screen_yticks)
     new_state = grab_frame(left, top, width, height)
     while True:
         # print(run)
         state = new_state
         arr = np.array(state)
-        arr = conv(arr)
-        board = arr[220:585, 625:990, :]
+        arr_rgb = conv(arr)
+        board = arr_rgb[220:585, 625:990, :]
+        vision = board.copy()
         board_hsv = cv2.cvtColor(board, cv2.COLOR_RGB2HSV)
         hsv_mean = board_hsv.mean(axis=0).mean(axis=0)
 
-        if hsv_mean[2] < 60:
+        print(hsv_mean)
+        if 100 > hsv_mean[1] > 40 and hsv_mean[2] < 41 or \
+                100 > hsv_mean[1] > 70 and hsv_mean[2] < 61 or \
+                70 > hsv_mean[1] > 55 and 30 < hsv_mean[2] < 60:
+
             break
 
         board_int = np.zeros((8, 8), dtype=int)
+        flood_mat_group = np.zeros((8, 8), dtype=int)
+        flood_group_members = dict()
+
+        "Create board colors"
+        "Flood same colors"
         for indx, x in enumerate(xticks):
             x = int(x)
             for indy, y in enumerate(yticks):
@@ -198,54 +173,184 @@ def main():
                     "red"
                     board_int[indy, indx] = Colors.red
 
-                # board = cv2.putText(board, str(board_int[indy, indx]), org=(x, y),
-                #                     fontFace=cv2.FONT_HERSHEY_PLAIN,
-                #                     fontScale=2, color=(255, 255, 255))
+                left_col = board_int[indy, indx - 1]
+                up_col = board_int[indy - 1, indx]
+                my_col = board_int[indy, indx]
 
-        board_reward = np.zeros((8, 8)) - 1
+                if indy > 0 and indx > 0 and my_col == left_col == up_col:
+                    group1 = flood_mat_group[indy - 1, indx]
+                    group2 = flood_mat_group[indy, indx - 1]
 
-        for yind, row in enumerate(board_int):
-            y = yticks[yind] + 9
-            for xind, val in enumerate(row):
-                x = xticks[xind] - 30
+                    if group1 != group2:
+                        "Merge and fuze groups"
+                        members_to_fuze = flood_group_members.pop(group2)
+                        members1 = flood_group_members.get(group1)
+                        for memy, memx in members_to_fuze:
+                            flood_mat_group[memy, memx] = group1
+                            members1.append((memy, memx))
 
-                if yind < 7 and xind < 7:
-                    a1 = board_int[yind + 1, xind]
-                    a2 = board_int[yind, xind + 1]
-                    a3 = board_int[yind + 1, xind + 1]
-                    if val == a1 and val == a2 and val == a3:
-                        rew = 0
-                        board_reward[yind + 1, xind] = rew
-                        board_reward[yind, xind + 1] = rew
-                        board_reward[yind + 1, xind + 1] = rew
-                    else:
-                        rew = -1
+                        flood_group_members[group2] = None
+                    join_this_group = group1
+
+                elif indx > 0 and my_col == left_col:
+                    "Fuze with left"
+                    join_this_group = flood_mat_group[indy, indx - 1]
+
+                elif indy > 0 and my_col == up_col:
+                    "Fuze with up"
+                    join_this_group = flood_mat_group[indy - 1, indx]
                 else:
-                    rew = -1
+                    "New group"
+                    join_this_group = len(flood_group_members) + 1
 
-                if board_reward[yind, xind] >= 0:
-                    rew = board_reward[yind, xind]
-                elif rew < 0 and val == Colors.gray or val == Colors.empty:
-                    rew = -2
-                    board_reward[yind, xind] = rew
+                # print(indy, indx, join_this_group)
+                flood_mat_group[indy, indx] = join_this_group
+                group = flood_group_members.get(join_this_group, None)
+                if group is None:
+                    group = [(indy, indx)]
+                    flood_group_members[join_this_group] = group
+                else:
+                    group.append((indy, indx))
 
-                board = cv2.putText(board, f"{rew:2.0f}", org=(x, y),
-                                    fontFace=cv2.FONT_HERSHEY_PLAIN,
-                                    fontScale=2, color=(255, 255, 255))
-
-        # cv2.imwrite("board.png", board)
-
-        act = next(acts)
-        x, y = act
-        # xi, yi = np.random.randint(0, 8, 2)
+        # act = next(acts)
+        # x, y = act
+        y = screen_yticks[click_pos[0]]
+        x = screen_xticks[click_pos[1]]
         mouse.move(x, y)
+        print(f"Moving mouse to : {click_pos}")
         click()
-        mouse.move(0, 0)
         time.sleep(0.1)  # fall pieces
-        new_state = grab_frame(left, top, width, height)
+        mouse.move(0, 0)
+
+        # fuzzy_board = cv2.blur(board, (5, 5))
+        # fuzzy_board = cv2.medianBlur(fuzzy_board, 3)
+        # fuzzy_board = cv2.blur(fuzzy_board, (5, 5))
+
+        fuzzy_board = cv2.medianBlur(board, 3)
+        highlight = []
+        for ind, template in enumerate(TEMPLATES):
+            if template is None:
+                continue
+            # matches = cv2.matchTemplate(board, template, method=cv2.TM_CCOEFF_NORMED)
+            matches = cv2.matchTemplate(fuzzy_board, template, method=cv2.TM_CCOEFF_NORMED)
+            loc = np.where(matches >= 0.7)  # median
+            # loc = np.where(matches >= 0.8)  # board
+
+            Y, X = loc
+            for y, x in zip(Y, X):
+                highlight.append((y, x, ind))
+
+        floods = set()
+        for y, x, ind in highlight:
+            # print(ind)
+            if ind == Colors.blue:
+                col = (255, 0, 0)
+            elif ind == Colors.green:
+                col = (0, 255, 0)
+            elif ind == Colors.red:
+                col = (0, 0, 255)
+            elif ind == Colors.yellow:
+                col = (0, 200, 200)
+            else:
+                col = (30, 60, 130)
+
+            pt1 = x, y
+            pt2 = x + 80, y + 80
+
+            xdist = np.absolute(xticks - x).min()
+            ydist = np.absolute(yticks - y).min()
+            try:
+                indx = int(np.where(xticks - x == xdist)[0])
+                indy = int(np.where(yticks - y == ydist)[0])
+                pos = indy, indx
+                floods.add(pos)
+            except Exception:
+                pass
+
+            vision = cv2.rectangle(vision, pt1, pt2, color=col, thickness=5)
+
+        # hi_score_boxes = []
+        # for indy, indx in floods:
+        # print(floods)
+        "Reduce values"
+        group_scores = {key: len(members) if members else 0 for key, members in flood_group_members.items()}
+        for indy, indx in floods:
+            group = flood_mat_group[indy, indx]
+            score = group_scores[group]
+            group_scores[group] = score - 3
+        "Add 3 fields for each big box"
+        temp_floods = floods
+        floods = set()
+        for indy, indx in temp_floods:
+            floods.add((indy, indx))
+            floods.add((indy + 1, indx))
+            floods.add((indy, indx + 1))
+            floods.add((indy + 1, indx + 1))
+
+        while True:
+            click_pos = np.random.randint(0, 8, 2)
+            best_click = -1
+            if board_int[click_pos[0], click_pos[1]] in (Colors.red, Colors.green, Colors.blue):
+                break
+
+        for indy, y in enumerate(yticks):
+            y = y + 5
+            for indx, x in enumerate(xticks):
+                x -= 25
+                color = board_int[indy, indx]
+
+                if color == Colors.black:
+                    reward = -2
+                elif (indy, indx) in floods:
+                    "Big block if"
+                    if color == Colors.yellow:
+                        reward = 1
+                    elif color == Colors.gray:
+                        reward = 2
+                    else:
+                        group = flood_mat_group[indy, indx]
+                        reward = group_scores[group] - 1
+                elif color == Colors.stone:
+                    "Small stone"
+                    reward = -2
+                elif color == Colors.yellow:
+                    "Yellow does not reset combo"
+                    reward = 0
+                else:
+                    "CLick cost"
+                    reward = -1
+
+                if reward > best_click:
+                    click_pos = indy, indx
+                    best_click = reward
+                elif best_click == -1:
+                    if color in (Colors.green, Colors.red, Colors.blue):
+                        grp = flood_mat_group[indy, indx]
+                        members = flood_group_members[grp]
+                        if len(members) == 1:
+                            click_pos = indy, indx
+
+                vision = cv2.putText(vision, f"{reward:2.0f}", org=(x, y),
+                                     fontFace=cv2.FONT_HERSHEY_PLAIN,
+                                     fontScale=2, color=(255, 255, 255))
+
+        if prev_click_pos[0] == click_pos[0] and prev_click_pos[1] == click_pos[1]:
+            click_pos = np.random.randint(0, 8, 2)
+
+        prev_click_pos = click_pos
+        y = int(yticks[click_pos[0]])
+        x = int(xticks[click_pos[1]])
+
+        pt1 = x - 20, y - 20
+        pt2 = x + 20, y + 20
+
+        col = (255, 0, 255)
+        vision = cv2.rectangle(vision, pt1, pt2, color=col, thickness=3)
 
         cv2.imshow("Game", board)
-        key = cv2.waitKey(10) & 0xFF
+        cv2.imshow("Vision", vision)
+        new_state = grab_frame(left, top, width, height)
+        key = cv2.waitKey(INTERVAL) & 0xFF
 
         if key == ord("q") or wapi.GetAsyncKeyState(ord("Q")):
             break
