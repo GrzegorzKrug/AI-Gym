@@ -1,5 +1,7 @@
 from PIL import ImageGrab, ImageFilter
 
+from model import agent
+
 from mouse_control import Mouse
 
 import win32api as wapi
@@ -21,10 +23,19 @@ TEMPLATES = [
         os.path.abspath(os.path.join("patterns", "stone.png")),
 ]
 TEMPLATES = [cv2.imread(path) if path else None for path in TEMPLATES]
-INTERVAL = 5
+INTERVAL = 1
+FALL_DELAY = 0.1
+INITIAL_MOUSE_POS = pyautogui.position()
 
 
 # TEMPLATES = [cv2.blur(img, (15, 15)) if img is not None else None for img in TEMPLATES]
+
+
+def click():
+    ctypes.windll.user32.mouse_event(Mouse.MOUSEEVENTF_LEFTDOWN)
+    time.sleep(0.005)
+    ctypes.windll.user32.mouse_event(Mouse.MOUSEEVENTF_LEFTUP)
+    # time.sleep(0.005)  # Click speed
 
 
 def timeit(func):
@@ -88,13 +99,6 @@ class Colors:
     block = 5
 
 
-def click():
-    ctypes.windll.user32.mouse_event(Mouse.MOUSEEVENTF_LEFTDOWN)
-    time.sleep(0.005)
-    ctypes.windll.user32.mouse_event(Mouse.MOUSEEVENTF_LEFTUP)
-    # time.sleep(0.005)  # Click speed
-
-
 @timeit
 def main():
     window = locate_click()
@@ -120,17 +124,26 @@ def main():
     click_pos = 0, 0
     acts = get_action(screen_xticks, screen_yticks)
     new_state = grab_frame(left, top, width, height)
+
+    model = agent
+
     while True:
         # print(run)
-        state = new_state
-        arr = np.array(state)
-        arr_rgb = conv(arr)
+        mouse.move(0, 0)
+        window_image = grab_frame(left, top, width, height)
+        window_image = np.array(window_image)
+
+        arr_rgb = conv(window_image)
+
         board = arr_rgb[220:585, 625:990, :]
+        state = board.copy()
         vision = board.copy()
         board_hsv = cv2.cvtColor(board, cv2.COLOR_RGB2HSV)
         hsv_mean = board_hsv.mean(axis=0).mean(axis=0)
 
-        print(hsv_mean)
+        state = cv2.resize(state, (50, 50))
+        cv2.imshow("Small", state)
+
         if 100 > hsv_mean[1] > 40 and hsv_mean[2] < 41 or \
                 100 > hsv_mean[1] > 70 and hsv_mean[2] < 61 or \
                 70 > hsv_mean[1] > 55 and 30 < hsv_mean[2] < 60:
@@ -212,21 +225,8 @@ def main():
                 else:
                     group.append((indy, indx))
 
-        # act = next(acts)
-        # x, y = act
-        y = screen_yticks[click_pos[0]]
-        x = screen_xticks[click_pos[1]]
-        mouse.move(x, y)
-        print(f"Moving mouse to : {click_pos}")
-        click()
-        time.sleep(0.1)  # fall pieces
-        mouse.move(0, 0)
-
-        # fuzzy_board = cv2.blur(board, (5, 5))
-        # fuzzy_board = cv2.medianBlur(fuzzy_board, 3)
-        # fuzzy_board = cv2.blur(fuzzy_board, (5, 5))
-
         fuzzy_board = cv2.medianBlur(board, 3)
+
         highlight = []
         for ind, template in enumerate(TEMPLATES):
             if template is None:
@@ -334,10 +334,9 @@ def main():
                                      fontFace=cv2.FONT_HERSHEY_PLAIN,
                                      fontScale=2, color=(255, 255, 255))
 
-        if prev_click_pos[0] == click_pos[0] and prev_click_pos[1] == click_pos[1]:
-            click_pos = np.random.randint(0, 8, 2)
+        # if prev_click_pos[0] == click_pos[0] and prev_click_pos[1] == click_pos[1]:
+        #     click_pos = np.random.randint(0, 8, 2)
 
-        prev_click_pos = click_pos
         y = int(yticks[click_pos[0]])
         x = int(xticks[click_pos[1]])
 
@@ -346,11 +345,20 @@ def main():
 
         col = (255, 0, 255)
         vision = cv2.rectangle(vision, pt1, pt2, color=col, thickness=3)
-
+        board = cv2.rectangle(board, pt1, pt2, color=col, thickness=3)
         cv2.imshow("Game", board)
         cv2.imshow("Vision", vision)
-        new_state = grab_frame(left, top, width, height)
+
+        y = screen_yticks[click_pos[0]]
+        x = screen_xticks[click_pos[1]]
+        mouse.move(x, y)
+        click()
+
+        model.add_memory((state, x, y, reward))
+
         key = cv2.waitKey(INTERVAL) & 0xFF
+
+        time.sleep(FALL_DELAY)  # fall pieces
 
         if key == ord("q") or wapi.GetAsyncKeyState(ord("Q")):
             break
@@ -361,6 +369,9 @@ def main():
             run += 1
 
     cv2.destroyAllWindows()
+    agent.save()
 
 
 main()
+
+mouse.move(*INITIAL_MOUSE_POS)

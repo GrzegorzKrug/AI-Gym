@@ -12,6 +12,7 @@ from keras.layers import (
     Conv2D, MaxPool2D,
     Softmax, Input, concatenate,
 )
+
 from keras.models import Sequential, load_model, Model
 from keras.initializers import RandomUniform
 from keras.callbacks import TensorBoard
@@ -21,6 +22,27 @@ from collections import deque
 from matplotlib import style
 from keras import backend
 from copy import deepcopy
+
+
+def timeit(func):
+    def wrapper(*args, **kwargs):
+        t0 = time.time()
+
+        out = func(*args, **kwargs)
+
+        tend = time.time()
+        dur = tend - t0
+        name = func.__qualname__
+        if dur < 1:
+            print(f"Execution: {name:<30} was {dur * 1000:>4.3f} ms")
+        elif dur > 60:
+            print(f"Execution: {name:<30} was {dur / 60:>4.3f} m")
+        else:
+            print(f"Execution: {name:<30} was {dur:>4.3f} s")
+
+        return out
+
+    return wrapper
 
 
 class CustomTensorBoard(TensorBoard):
@@ -71,7 +93,7 @@ class FlexConvModel:
             /,
             node_shapes=None,
             compiler=None,
-            memory_size=10_000,
+            memory_size=settings.MEMORY_SIZE,
 
             alpha=0.99,
             beta=0.99,
@@ -146,17 +168,25 @@ class FlexConvModel:
         np.save(self.path_params, arr)
         print(f"Saving params {self.path_params}")
 
-    def _load_memory(self):
+    @timeit
+    def _load_memory(self, drop_last=10):
         try:
             mem = np.load(self.path_memory, allow_pickle=True)
-            self.memory = mem
+            print(f"Loaded memory: {mem.shape} -> {mem.shape[0] - drop_last} samples")
+            for ind, sample in enumerate(mem):
+                if ind + drop_last >= len(mem):
+                    break
+                self.add_memory(sample)
+
             print(f"Loading memory {self.path_memory}")
         except FileNotFoundError:
             print(f"Not found memory file {self.path_memory}")
 
+    @timeit
     def _save_memory(self):
-        np.save(self.path_memory, self.memory)
-        print(f"Saving memory {self.path_memory}")
+        mem = np.array(self.memory, dtype=object)
+        np.save(self.path_memory, mem)
+        print(f"Saving memory {self.path_memory}, size: {len(self.memory)}")
 
     @property
     def path_model_weights(self):
@@ -180,6 +210,12 @@ class FlexConvModel:
         self._save_params()
 
         return True
+
+    def save(self):
+        self.save_model()
+
+    def load(self):
+        self.load_model()
 
     @staticmethod
     def _save_weights(mod, path):
@@ -265,5 +301,3 @@ agent = DQNAgent(
         node_shapes=settings.NODE_SHAPES,
         compiler=settings.COMPILER,
 )
-
-agent.save_model()
