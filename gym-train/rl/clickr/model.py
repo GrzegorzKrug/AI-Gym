@@ -168,8 +168,7 @@ class FlexConvModel:
         np.save(self.path_params, arr)
         print(f"Saving params {self.path_params}")
 
-    @timeit
-    def _load_memory(self, drop_last=10):
+    def _load_memory(self, drop_last=0):
         try:
             mem = np.load(self.path_memory, allow_pickle=True)
             print(f"Loaded memory: {mem.shape} -> {mem.shape[0] - drop_last} samples")
@@ -187,6 +186,10 @@ class FlexConvModel:
         mem = np.array(self.memory, dtype=object)
         np.save(self.path_memory, mem)
         print(f"Saving memory {self.path_memory}, size: {len(self.memory)}")
+
+    @property
+    def path_model_dir(self):
+        return os.path.abspath(f"{settings.MODEL_NAME}") + os.sep
 
     @property
     def path_model_weights(self):
@@ -208,6 +211,20 @@ class FlexConvModel:
         self._save_weights(self.model, self.path_model_weights)
         self._save_memory()
         self._save_params()
+        # plot_model(self.model, to_file=self.path_model + os.sep + "model.png")
+
+        with open(self.path_model_dir + "summary.txt", 'wt') as fh:
+            fh.write(f"Model: {settings.MODEL_NAME}\n")
+            self.model.summary(print_fn=lambda x: fh.write(x + '\n'))
+
+        with open(self.path_model_dir + "params_preview.txt", 'wt') as fh:
+            fh.write(f"Model: {settings.MODEL_NAME}\n\n")
+            pars, optimizer = self.params
+            for par in pars:
+                fh.write(f"{par}\n")
+
+            fh.write(f"\n")
+            fh.write(f"{optimizer}\n")
 
         return True
 
@@ -301,3 +318,5 @@ agent = DQNAgent(
         node_shapes=settings.NODE_SHAPES,
         compiler=settings.COMPILER,
 )
+
+agent.save_model()

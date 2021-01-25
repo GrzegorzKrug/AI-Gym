@@ -113,6 +113,14 @@ def main():
     board_size = bbox[1] - bbox[0], bbox[3] - bbox[2]
     size = 15
 
+    def get_board():
+        window_image = grab_frame(left, top, width, height)
+        window_image = np.array(window_image)
+
+        arr_rgb = conv(window_image)
+        bord = arr_rgb[220:585, 625:990, :]
+        return bord
+
     yticks = np.linspace(bbox[0] + size + 14, bbox[1] - size - 5, 8, dtype=int) - bbox[0]
     xticks = np.linspace(bbox[2] + size + 14, bbox[3] - size - 5, 8, dtype=int) - bbox[2]
 
@@ -120,35 +128,36 @@ def main():
     screen_xticks = np.linspace(bbox[2] + 20, bbox[3] - 15, 8) + left
 
     run = 0
-    prev_click_pos = 0, 0
-    click_pos = 0, 0
-    acts = get_action(screen_xticks, screen_yticks)
-    new_state = grab_frame(left, top, width, height)
-
+    games_count = 10
     model = agent
+    new_state = get_board()
 
     while True:
-        # print(run)
-        mouse.move(0, 0)
-        window_image = grab_frame(left, top, width, height)
-        window_image = np.array(window_image)
 
-        arr_rgb = conv(window_image)
-
-        board = arr_rgb[220:585, 625:990, :]
+        board = new_state.copy()
         state = board.copy()
         vision = board.copy()
         board_hsv = cv2.cvtColor(board, cv2.COLOR_RGB2HSV)
         hsv_mean = board_hsv.mean(axis=0).mean(axis=0)
 
-        state = cv2.resize(state, (50, 50))
+        state = cv2.resize(state, (100, 100))
         cv2.imshow("Small", state)
 
         if 100 > hsv_mean[1] > 40 and hsv_mean[2] < 41 or \
                 100 > hsv_mean[1] > 70 and hsv_mean[2] < 61 or \
                 70 > hsv_mean[1] > 55 and 30 < hsv_mean[2] < 60:
-
-            break
+            games_count -= 1
+            if games_count <= 0:
+                print(f"Game over")
+                break
+            else:
+                time.sleep(3)
+                mouse.move(left + 500, top + 700)
+                click()
+                print(f"Games left: {games_count}")
+                time.sleep(2.5)
+                new_state = get_board()
+                continue
 
         board_int = np.zeros((8, 8), dtype=int)
         flood_mat_group = np.zeros((8, 8), dtype=int)
@@ -354,11 +363,20 @@ def main():
         mouse.move(x, y)
         click()
 
-        model.add_memory((state, x, y, reward))
+        action = click_pos[0] * 8 + click_pos[1]
+        if action < 64:
+            # reward = 1
+            pass
+        else:
+            best_click = 0
 
         key = cv2.waitKey(INTERVAL) & 0xFF
-
         time.sleep(FALL_DELAY)  # fall pieces
+
+        mouse.move(0, 0)
+        new_state = get_board()
+        next_state = cv2.resize(new_state, (100, 100))
+        model.add_memory((state, action, next_state, best_click))
 
         if key == ord("q") or wapi.GetAsyncKeyState(ord("Q")):
             break
