@@ -5,6 +5,8 @@ from model import agent
 from mouse_control import Mouse
 
 import win32api as wapi
+import win32con as wcon
+
 import pyautogui
 import ctypes
 import mouse
@@ -131,8 +133,16 @@ def main():
     games_count = 10
     model = agent
     new_state = get_board()
+    pause = False
 
     while True:
+
+        #if wapi.GetAsyncKeyState('space'):
+        if wapi.GetAsyncKeyState(wcon.VK_SPACE):
+            pause = not pause
+
+        if pause:
+            time.sleep(0.1)
 
         board = new_state.copy()
         state = board.copy()
