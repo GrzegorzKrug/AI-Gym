@@ -1,6 +1,7 @@
 from PIL import ImageGrab, ImageFilter
 
 from model import agent
+from check_end import check_end_condition
 
 from mouse_control import Mouse
 
@@ -102,6 +103,41 @@ class Colors:
 
 
 @timeit
+def save_frames():
+    window = locate_click()
+    window.activate()
+    left = window.left  # + 3
+    top = window.top  # + 1
+
+    height = 797 - 10
+    width = 1030 - 10
+
+    bbox = [220, 585, 625, 990]
+    board_size = bbox[1] - bbox[0], bbox[3] - bbox[2]
+    size = 15
+
+    def get_board():
+        window_image = grab_frame(left, top, width, height)
+        window_image = np.array(window_image)
+
+        arr_rgb = conv(window_image)
+        bord = arr_rgb[220:585, 625:990, :]
+        return bord
+
+    count = 1
+    while True:
+
+        board = get_board()
+        # cv2.imshow("preview", board)
+        cv2.imwrite(f"frames{os.sep}frame-{count:>04}.png", board)
+        # cv2.waitKey(1)
+        count += 1
+
+        if wapi.GetAsyncKeyState(ord("Q")):
+            break
+
+
+@timeit
 def main():
     window = locate_click()
     window.activate()
@@ -130,32 +166,42 @@ def main():
     screen_xticks = np.linspace(bbox[2] + 20, bbox[3] - 15, 8) + left
 
     run = 0
-    games_count = 10
+    games_count = GAMES
     model = agent
     new_state = get_board()
     pause = False
 
     while True:
 
-        #if wapi.GetAsyncKeyState('space'):
+        # if wapi.GetAsyncKeyState('space'):
         if wapi.GetAsyncKeyState(wcon.VK_SPACE):
             pause = not pause
+            if not pause:
+                window.activate()
+            else:
+                mouse.move(*INITIAL_MOUSE_POS)
+        elif wapi.GetAsyncKeyState(ord("Q")):
+            break
 
         if pause:
-            time.sleep(0.1)
+            cv2.waitKey(50)
+            continue
 
         board = new_state.copy()
         state = board.copy()
         vision = board.copy()
         board_hsv = cv2.cvtColor(board, cv2.COLOR_RGB2HSV)
-        hsv_mean = board_hsv.mean(axis=0).mean(axis=0)
+        # hsv_mean = board_hsv.mean(axis=0).mean(axis=0)
 
         state = cv2.resize(state, (100, 100))
-        cv2.imshow("Small", state)
 
-        if 100 > hsv_mean[1] > 40 and hsv_mean[2] < 41 or \
-                100 > hsv_mean[1] > 70 and hsv_mean[2] < 61 or \
-                70 > hsv_mean[1] > 55 and 30 < hsv_mean[2] < 60:
+        "Check if screen is dark to end"
+        # if 100 > hsv_mean[1] > 40 and hsv_mean[2] < 41 or \
+        #         100 > hsv_mean[1] > 70 and hsv_mean[2] < 61 or \
+        #         70 > hsv_mean[1] > 55 and 30 < hsv_mean[2] < 60:
+
+        if check_end_condition(board):
+            "Create new game!"
             games_count -= 1
             if games_count <= 0:
                 print(f"Game over")
