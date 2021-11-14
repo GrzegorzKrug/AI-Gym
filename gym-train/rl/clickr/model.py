@@ -27,8 +27,13 @@ from copy import deepcopy
 def timeit(func):
     def wrapper(*args, **kwargs):
         t0 = time.time()
-
-        out = func(*args, **kwargs)
+        was_stopped = False
+        error = None
+        try:
+            out = func(*args, **kwargs)
+        except KeyboardInterrupt as err:
+            was_stopped = True
+            error = err
 
         tend = time.time()
         dur = tend - t0
@@ -39,6 +44,9 @@ def timeit(func):
             print(f"Execution: {name:<30} was {dur / 60:>4.3f} m")
         else:
             print(f"Execution: {name:<30} was {dur:>4.3f} s")
+
+        if was_stopped:
+            raise KeyboardInterrupt(str(error))
 
         return out
 
@@ -87,7 +95,7 @@ class CustomTensorBoard(TensorBoard):
                 self.writer.flush()
 
 
-class FlexConvModel:
+class FlexModel:
     def __init__(
             self,
             /,
@@ -123,6 +131,8 @@ class FlexConvModel:
             self.make_model()
             print(f"New model: {settings.MODEL_NAME}")
 
+        self.save_summary()
+
     def make_model_dir(self):
         os.makedirs(os.path.dirname(self.path_params), exist_ok=True)
 
@@ -151,9 +161,6 @@ class FlexConvModel:
         self.load_model_weights()
         self._load_memory()
 
-    def make_model(self):
-        raise NotImplemented("Define method in your subclass")
-
     def _load_params(self):
         try:
             pars = np.load(self.path_params, allow_pickle=True)
@@ -181,7 +188,6 @@ class FlexConvModel:
         except FileNotFoundError:
             print(f"Not found memory file {self.path_memory}")
 
-    @timeit
     def _save_memory(self):
         mem = np.array(self.memory, dtype=object)
         np.save(self.path_memory, mem)
@@ -213,6 +219,7 @@ class FlexConvModel:
         self._save_params()
         # plot_model(self.model, to_file=self.path_model + os.sep + "model.png")
 
+    def save_summary(self):
         with open(self.path_model_dir + "summary.txt", 'wt') as fh:
             fh.write(f"Model: {settings.MODEL_NAME}\n")
             self.model.summary(print_fn=lambda x: fh.write(x + '\n'))
@@ -239,6 +246,7 @@ class FlexConvModel:
         while True:
             try:
                 mod.save_weights(path)
+                print(f"Saving weights {path}")
                 break
             except OSError:
                 time.sleep(0.2)
@@ -272,12 +280,11 @@ class FlexConvModel:
     def add_memory(self, data):
         self.memory.append(data)
 
-
-class DQNAgent(FlexConvModel):
     def make_model(self):
         print(f"Creating dqn model {self.name}")
         layers = []
         CFG = deepcopy(self.node_shapes)
+        print(CFG)
         for cfg in CFG:
             node = cfg.pop('node', None)
             args = cfg.pop('args', ())
@@ -306,12 +313,40 @@ class DQNAgent(FlexConvModel):
             layers.append(lay)
 
         model = Sequential(layers)
-        model.compile(**self.compiler)
-        # print(model.summary())
+        # model.compile(**self.compiler)
+        model.compile(optimizer='sgd', loss='mse', metrics=['accuracy'])
         self.model = model
 
-    def train(self):
-        pass
+    def predict(self, *args, **kwargs):
+        return self.model.predict(*args, **kwargs)
+
+
+class DQNAgent(FlexModel):
+    def train(self, n=1, batchsize=50, shuffle=True, verbose=True):
+        mem = self.memory.copy()
+        if len(mem) < 1:
+            return None
+        if shuffle:
+            random.shuffle(mem)
+
+        batch = random.sample(mem, batchsize * n)
+
+        states, actions, new_states, rewards = [*zip(*batch)]
+        states = np.array(states)
+        new_states = np.array(new_states)
+
+        preds = self.model.predict(states)
+        future_q = self.model.predict(new_states)
+
+        for ind, (act, rew) in enumerate(zip(actions, rewards)):
+            max_q = max(future_q[ind])
+            # max_q = 0
+            print(f"{act:>2}, {rew:>6.2f} {max_q:>3.4f}")
+            reinforcment = rew + settings.GAMMA * max_q
+            preds[ind][act] = reinforcment
+
+        # print(future_q)
+        self.model.fit(states, preds, batch_size=batchsize, verbose=verbose)
 
 
 agent = DQNAgent(
@@ -319,4 +354,43 @@ agent = DQNAgent(
         compiler=settings.COMPILER,
 )
 
-agent.save_model()
+
+def memory_viewer(agent):
+    import cv2
+
+    mem = agent.memory
+    for x in range(1000):
+        sample = mem[x]
+        pic1, action, pic2, rew = sample
+
+        pic1 = cv2.resize(pic1, (300, 300))
+        pic2 = cv2.resize(pic2, (300, 300))
+
+        cv2.imshow("State", pic1)
+        cv2.imshow("Next State", pic2)
+
+        cv2.waitKey(300)
+
+
+if __name__ == "__main__":
+    agent.save()
+    print("Saved model")
+
+
+    @timeit
+    def train_it():
+        save_interval = 50
+
+        tend = time.time() + save_interval
+        for x in range(1):
+            while time.time() < tend:
+                agent.train(n=10, batchsize=10)
+
+            tend += save_interval
+            agent.save()
+
+
+    if len(agent.memory) > 0:
+        train_it()
+
+    # memory_viewer(agent)
