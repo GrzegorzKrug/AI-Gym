@@ -26,9 +26,10 @@ TEMPLATES = [
         os.path.abspath(os.path.join("patterns", "stone.png")),
 ]
 TEMPLATES = [cv2.imread(path) if path else None for path in TEMPLATES]
-INTERVAL = 1
-FALL_DELAY = 0.1
+INTERVAL = 500  # MS
+FALL_DELAY = 0.1  # S
 INITIAL_MOUSE_POS = pyautogui.position()
+GAMES = 100
 
 
 # TEMPLATES = [cv2.blur(img, (15, 15)) if img is not None else None for img in TEMPLATES]
@@ -402,15 +403,22 @@ def main():
         # if prev_click_pos[0] == click_pos[0] and prev_click_pos[1] == click_pos[1]:
         #     click_pos = np.random.randint(0, 8, 2)
 
+        # X = np.array([state])
+        # actions = agent.predict(X)
+
+        # board_Q = actions[0][:64].reshape(8, 8)
+        # click_pos = np.where(board_Q == board_Q.max())
+        # board_Q = np.round(board_Q, 2)
+        # print(board_Q)
+
         y = int(yticks[click_pos[0]])
         x = int(xticks[click_pos[1]])
 
         pt1 = x - 20, y - 20
         pt2 = x + 20, y + 20
+        col = (0, 255, 255)
 
-        col = (255, 0, 255)
         vision = cv2.rectangle(vision, pt1, pt2, color=col, thickness=3)
-        board = cv2.rectangle(board, pt1, pt2, color=col, thickness=3)
         cv2.imshow("Game", board)
         cv2.imshow("Vision", vision)
 
@@ -424,7 +432,7 @@ def main():
             # reward = 1
             pass
         else:
-            best_click = 0
+            best_click = -1
 
         key = cv2.waitKey(INTERVAL) & 0xFF
         time.sleep(FALL_DELAY)  # fall pieces
@@ -434,7 +442,7 @@ def main():
         next_state = cv2.resize(new_state, (100, 100))
         model.add_memory((state, action, next_state, best_click))
 
-        if key == ord("q") or wapi.GetAsyncKeyState(ord("Q")):
+        if key == ord("q"):
             break
 
         if run >= 5000:
