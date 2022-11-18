@@ -13,7 +13,7 @@ from keras.models import Sequential, load_model, Model
 from keras.initializers import RandomUniform
 from keras.callbacks import TensorBoard
 from keras.utils import plot_model
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 
 from collections import deque
 from copy import deepcopy
@@ -27,11 +27,12 @@ class FlatModel:
             compiler=None,
             memory_size=10000,
 
-            alpha=0.99,
-            beta=0.99,
-            gamma=0.99,
+            alpha=0.01,
+            beta_1=0.9,
+            beta_2=0.999,
+            # gamma=0.99,
             name=None,
-            load_model=True,
+            load_model=False,
             save_model=True,
             save_dir="models",
     ):
@@ -45,8 +46,9 @@ class FlatModel:
         self.memory_size = memory_size
 
         self.alpha = alpha
-        self.beta = beta
-        self.gamma = gamma
+        self.beta_1 = beta_1
+        self.beta_2 = beta_2
+        # self.gamma = gamma
 
         self.memory = deque(maxlen=memory_size)
         self.model = None
@@ -56,8 +58,10 @@ class FlatModel:
         self.allow_save = save_model
         self.save_dir = str(save_dir)
 
+        self.iters = 0
+
         if self.allow_load:
-            self.load_model()
+            self.load_all()
         else:
             self.make_model()
             print(f"New model: {self.model_name}")
@@ -74,7 +78,7 @@ class FlatModel:
         Returns:
 
         """
-        return self.node_shapes, self.compiler
+        return self.node_shapes, self.compiler, self.iters
 
     @params.setter
     def params(self, new_params):
@@ -83,9 +87,9 @@ class FlatModel:
         Returns:
 
         """
-        self.node_shapes, self.compiler = new_params
+        self.node_shapes, self.compiler, self.iters = new_params
 
-    def load_model(self):
+    def load_all(self):
         print(f"Loading model {self.name}")
         self.load_params()
         self.make_model()
@@ -160,22 +164,27 @@ class FlatModel:
         self.save_memory()
         self.save_params()
         self._save_weights(self.model, self.path_model_weights)
+        self.save_summary()
         # plot_model(self.model, to_file=self.path_model + os.sep + "model.png")
 
     def save_summary(self):
         self.make_model_dir()
 
-        with open(self.path_model_dir + "summary.txt", 'wt') as fh:
+        with open(self.path_model_dir + "params_summary.txt", 'wt') as fh:
             fh.write(f"Model: {self.model_name}\n")
             self.model.summary(print_fn=lambda x: fh.write(x + '\n'))
 
-        with open(self.path_model_dir + "params_preview.txt", 'wt') as fh:
+        with open(self.path_model_dir + "model_preview.txt", 'wt') as fh:
             fh.write(f"Model: {self.model_name}\n\n")
-            pars, optimizer = self.params
+
+            fh.write(f"Iterations: {self.iters}\n")
+
+            fh.write(f"\nLayers\n")
+            pars, optimizer, _ = self.params
             for par in pars:
                 fh.write(f"{par}\n")
 
-            fh.write(f"\n")
+            fh.write(f"\nOptimizer\n")
             fh.write(f"{optimizer}\n")
 
         return True
@@ -232,7 +241,7 @@ class FlatModel:
         print(CFG)
         for cfg in CFG:
             node = cfg.pop('node', None)
-            args = cfg.pop('args', ())
+            args = cfg.pop('args', tuple())
             kwargs = cfg
 
             if not node:
@@ -243,7 +252,7 @@ class FlatModel:
             if node == 'conv2d':
                 lay = Conv2D(*args, **kwargs)
             elif node == 'dense':
-                lay = Dense(*args, **kwargs)
+                lay = Dense(*args, **kwargs,)
             elif node == "maxpool":
                 lay = MaxPool2D(*args, **kwargs)
             elif node == "dropout":
@@ -259,21 +268,36 @@ class FlatModel:
 
         model = Sequential(layers)
         # model.compile(**self.compiler)
-        model.compile(optimizer='sgd', loss='mse', metrics=['accuracy'])
+        # model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+        opt_str = self.compiler['optimizer'].lower()
+        if opt_str == "adam":
+            opt = Adam
+        else:
+            opt = SGD
+
+        opt_set = self.compiler.copy()
+        opt_set.pop('optimizer')
+        print(f"opt settings: {opt_set}")
+
+        model.compile(optimizer=opt(learning_rate=self.alpha, beta_1=self.beta_1, beta_2=self.beta_2),
+                      **opt_set,
+                      )
         self.model = model
 
     def predict(self, *args, **kwargs):
         return self.model.predict(*args, **kwargs)
 
+    def fit(self, *args, **kwargs):
+        return self.model.fit(*args, **kwargs)
+
 
 if __name__ == "__main__":
     NODES_CONFIG = [
             {'node': 'input', 'args': (4,)},
-            {'node': 'dense', 'args': (4,), 'activation': 'relu'},
-            {'node': "dropout", 'args': (0.05,)},
-            {'node': 'dense', 'args': (100,), 'activation': 'relu'},
-            {'node': "dropout", 'args': (0.05,)},
-            {'node': 'dense', 'args': (100,), 'activation': 'relu'},
+            # {'node': "dropout", 'args': (0.05,)},
+            {'node': 'dense', 'args': (30,), 'activation': 'relu'},
+            # {'node': "dropout", 'args': (0.05,)},
+            {'node': 'dense', 'args': (30,), 'activation': 'relu'},
             {'node': 'dense', 'args': (4,), 'activation': 'softmax'},
     ]
 
