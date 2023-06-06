@@ -6,14 +6,18 @@ Use and learn various technologies and techniques in areas:
 * machine learning 
 * data science
 
-#### Projects list
-1. [GymAI Cart Q-learning](gym-train/sentdex/q-learning)
+
+#### Classification 
 
 1. [Digits classification](gym-train/sentdex/tensorflow-basics/num-classification-part1)
 
 2. [Cats/Dogs in grayscale classification](gym-train/sentdex/tensorflow-basics/cat-dogs-part2)
 
 3. [Fruits in RGB classification](gym-train/classification/fruits)
+
+#### Reinforcment learning
+
+1. [GymAI Cart Q-learning](gym-train/sentdex/q-learning)
 
 4. [Deep Q-learning mountain Cart](gym-train/sentdex/deep-qlearning)
 
