@@ -1,12 +1,12 @@
 # Readme - GymTrain
 
 
-#### Repository target
+## Repository target
 Use and learn various technologies and techniques in areas:
 * machine learning 
 * data science
 
-
+# More Description in each topic
 #### Classification 
 
 1. [Digits classification](gym-train/sentdex/tensorflow-basics/num-classification-part1)
