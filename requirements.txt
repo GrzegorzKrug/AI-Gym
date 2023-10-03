@@ -9,6 +9,6 @@ jupyter==1.0.0
 opencv-python==4.2.0.34
 Keras==2.3.1
 texttable==1.6.2
-pillow==8.2.0
+pillow==10.0.1
 cvlib==0.2.5
 tensorflow==2.1.0
