@@ -1,4 +1,4 @@
-# Readme - GymTrain
+# Readme - AI - Gym
 
 
 ## Repository target
