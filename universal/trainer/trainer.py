@@ -1,16 +1,28 @@
+import gymnasium as gym
+# import gym
+
+
 import matplotlib.pyplot as plt
-import tensorflow as tf
+# import tensorflow as tf
 import random
 import numpy as np
-import numba
+# import numba
 import time
-import gym
+
+import keras
 import os
 
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import Dense, Concatenate, Dropout, Input
-from tensorflow.keras.optimizers import Adam
+from matplotlib.style import use
+from yasiu_vis.ykeras import plotLayersWeights
 
+from tensorflow.keras import regularizers
+from tensorflow.keras.losses import Huber
+
+# from tensorflow.keras.models import Sequential, Model
+# from tensorflow.keras.layers import Dense, Concatenate, Dropout, Input
+# from tensorflow.keras.optimizers import Adam
+
+import os
 import pygame
 
 
@@ -24,12 +36,12 @@ class Trainer:
     2: Many agents and many envs.
     """
     configs = {
-            k.lower(): v for k, v
-            in {
-                    'OneToOne': 0,
-                    'OneToMany': 1,
-                    'ManyToMany': 2,
-            }.items()
+        k.lower(): v for k, v
+        in {
+            'OneToOne': 0,
+            'OneToMany': 1,
+            'ManyToMany': 2,
+        }.items()
     }
 
     # configs = {k.lower(): v for k, v in configs.items()}
@@ -37,7 +49,7 @@ class Trainer:
     def __init__(self,
                  model, environments,
                  # envs_n=10,
-                 input_size=2, output_size=2,
+                 input_size=2, action_size=2,
                  memory_max_samples=5000,
                  batch_size=200, train_size=2000,
                  train_each_step=False, split_train=False,
@@ -77,11 +89,15 @@ class Trainer:
 
         "Training settings"
         self.model = model
+        "Model"
         self.envs = environments
+        "Environments list"
         self.config = self.configs.get(config.lower(), 0)
+        "Integer selected from `self.configs`"
+
         self.config_name = config
         self.input_size = input_size
-        self.output_size = output_size
+        self.output_size = action_size
         # self.action_size = action_size
 
         self.min_train_samples = 10
@@ -97,23 +113,32 @@ class Trainer:
             # self.envs_n = envs_n
             self.envs_n = len(self.envs)
         else:
-            raise NotImplemented(f"Not implemented config {self.config_name}")
-        print(f"Starting Trainer with config: {self.config} ({self.config_name})")
+            raise NotImplementedError(
+                f"Not implemented config {self.config_name}")
+        print(
+            f"Starting Trainer with config: {self.config} ({self.config_name})")
 
         "Memory settings (fitting)"
-        self.memory = np.zeros((memory_max_samples, (input_size * 2 + 3)), dtype=float)
-        # print(self.memory.dtype)
+        self.memory = np.zeros(
+            (memory_max_samples, (input_size * 2 + 2 + action_size)), dtype=float)
+        # state prev and current, end, reward, single action
+        "Memory array, Shape: memory_max_samples, inputSize*2 + 3"
+
         self.memory_write_index = 0
         self.memory_last_index = memory_max_samples - 1
         self.memory_fully_writen = False
 
         "Last state memory"
-        self.states = np.zeros((self.envs_n, self.input_size), dtype=np.float32)
+        self.states = np.zeros(
+            (self.envs_n, self.input_size), dtype=np.float32)
         # self.actions = np.zeros((self.envs_n, self.action_size), dtype=np.float32)
         # self.rewards = np.zeros((self.envs_n, 1), dtype=np.float32)
         self.alive_envs = set(range(self.envs_n))
 
         self.notify = notify_win
+        "Notify debug"
+
+        self.iters = 0
 
         "Additional trainer setup"
         self.post_init_called = False
@@ -127,10 +152,10 @@ class Trainer:
         self.post_init_called = True
 
     def _init_set_step_func(self):
-        cf = self.config
-        if cf == 0:
+        config = self.config
+        if config == 0:
             self._inner_step = self._inner_step_single
-        elif cf == 1:
+        elif config == 1:
             self._inner_step = self._inner_step_one_agent_many_envs
         else:
             self._inner_step = self._inner_step_many_agents_many_envs
@@ -146,14 +171,16 @@ class Trainer:
             self._inner_train = self._inner_train_many_agents_many_envs
 
     def reset(self):
-        self.states = np.zeros((self.envs_n, self.input_size), dtype=np.float32)
+        self.states = np.zeros(
+            (self.envs_n, self.input_size), dtype=np.float32)
         # self.actions = np.zeros((self.envs_n, self.action_size), dtype=np.int32)
         # self.rewards = np.zeros((self.envs_n, 1), dtype=np.float32)
         self.alive_envs = set(range(self.envs_n))
 
         for i in range(self.envs_n):
             # print(f"I:{i}")
-            state = self.envs[i].reset()
+            state, _ = self.envs[i].reset()
+            print(state)
             self.states[i] = state
 
     def start_training(self, epochs=1, max_iters=10,
@@ -162,16 +189,16 @@ class Trainer:
                        min_exploration=1e-2,
                        exploration_frequency=3,
                        ):
-        for r in range(epochs):
+        for cur_ep in range(epochs):
             "Iterate over epochs"
             self.reset()  # Clear environment at start
             current_explore_ratio = np.cos(
-                    r / (epochs - 1) * np.pi * exploration_frequency) * exploration_ratio
+                cur_ep / (epochs - 1) * np.pi * exploration_frequency) * exploration_ratio
             current_explore_ratio = np.abs(current_explore_ratio)
             if current_explore_ratio < min_exploration:
                 current_explore_ratio = min_exploration
 
-            print(f"Epoch: {r:>3}, exploration: {current_explore_ratio:3.4f}")
+            print(f"Epoch: {cur_ep:>3}, exploration: {current_explore_ratio:3.4f}")
             for n in range(max_iters):
                 if len(self.alive_envs) <= 0:
                     break
@@ -180,7 +207,7 @@ class Trainer:
 
             self._inner_train()
 
-        self.model.iters += r + 1
+        self.iters += cur_ep + 1
 
     def _inner_step(self, random_action=False):
         """
@@ -268,7 +295,8 @@ class Trainer:
 
         for ind in np.argwhere(end <= 0):
             aind = action_inds[ind]
-            Y[ind, aind] = reward[ind] + gamma * (future_max[ind] - Y[ind, aind])
+            Y[ind, aind] = reward[ind] + gamma * \
+                (future_max[ind] - Y[ind, aind])
             # Y[ind, aind] = reward[ind] + gamma * (future_max[ind])
 
         # print("Y:")
@@ -296,16 +324,22 @@ class Trainer:
         # print(actions)
         for current_i, (act, env_ind) in enumerate(zip(actions, list(self.alive_envs))):
             "Loop over environments"
-            new_state, reward, end, info = self.envs[env_ind].step(act)
+            observation, reward, terminated, truncated, info = \
+                self.envs[env_ind].step(act)
+            # print(ret)
             # print(reward)
             # reward = self.tweak_reward(None, new_state, reward)
 
             if self.notify == 2:
                 if reward >= 0:
                     rewards_text += f"{reward}, "
-            sample = np.concatenate([old_states[current_i, :], new_state, [act], [reward], [end]],
-                                    dtype=np.float32)
-            if end:
+            sample = np.concatenate([
+                old_states[current_i, :], observation,
+                [act], [reward], [terminated]],
+                dtype=np.float32
+            )
+
+            if terminated:
                 self.alive_envs.remove(env_ind)
 
             self.add_memory(sample)
@@ -344,11 +378,11 @@ class Trainer:
 
     def _inner_step_many_agents_many_envs(self):
         """"""
-        raise NotImplemented
+        raise NotImplementedError
 
     def _inner_train_many_agents_many_envs(self):
         """"""
-        raise NotImplemented
+        raise NotImplementedError
 
     def add_memory(self, sample):
         self.memory[self.memory_write_index] = sample
@@ -400,20 +434,25 @@ class Trainer:
 
 
 def simple_model(in_shape, out_shape):
-    inp = Input(in_shape)
-    lay = Dense(100, activation='relu')(inp)
-    lay = Dense(100, activation='relu')(lay)
-    out = Dense(out_shape, activation='linear')(lay)
+    model = keras.models.Sequential()
+    model.add(keras.Input(shape=(in_shape,)))
+    # inp = keras.Input(in_shape)
+    # lay = keras.Dense(100, activation='relu')(inp)
+    model.add(keras.layers.Dense(100, activation='relu'))
+    model.add(keras.layers.Dense(100, activation='relu'))
+    # lay = keras.Dense(100, activation='relu')(lay)
+    model.add(keras.layers.Dense(out_shape, activation='linear'))
 
-    model = Model(inputs=[inp], outputs=[out])
-    model.compile(optimizer=Adam(learning_rate=1e-3),
-                  loss='mse',
-                  metrics=['accuracy'])
+    # model = Model(inputs=[inp], outputs=[out])
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+        loss='mse',
+    )
     return model
 
 
 def simple_env(n=1):
-    envs = [gym.make('LunarLander-v2') for _ in range(n)]
+    # envs = [gym.make('LunarLander-v3') for _ in range(n)]
     envs = [gym.make('MountainCar-v0') for _ in range(n)]
     return envs
 
@@ -422,12 +461,13 @@ if __name__ == "__main__":
     envs_n = 15
     input_size, output_size = 8, 4  # Lunar
     input_size, output_size = 2, 3  # Mountain Car
+
+    envs = simple_env(envs_n)
     model = simple_model(input_size, output_size)
     if os.path.isfile("mod1.weights"):
         pass
         # model.load_weights("mod1.weights")
 
-    envs = simple_env(envs_n)
     trening = Trainer(model, envs,
                       config='onetomany', envs_n=envs_n,
                       input_size=input_size, action_size=1,
@@ -438,38 +478,39 @@ if __name__ == "__main__":
 
     np.set_printoptions(suppress=True, precision=4)
 
-    trening.start_training(epochs=5, max_iters=200, exploration_type='sin', exploration_ratio=0.4)
+    trening.start_training(epochs=2, max_iters=200,
+                           exploration_type='sin', exploration_ratio=0.4)
     rewards = tuple(sample[3] for sample in trening.memory)
     rewards = np.array(rewards)
-    print("Rewards")
-    print(str(rewards))
-    plt.hist(rewards, bins=50)
+    # print("Rewards")
+    # print(str(rewards))
+    # plt.hist(rewards, bins=50)
     # print()
-    model.save_weights("mod1.weights")
+    model.save_weights("mod1.weights.h5")
 
-    "POST Train Render"
-    game = simple_env(1)[0]
-    end = False
-    state = game.reset()
-    game.render()
-    time.sleep(5)
+    # "POST Train Render"
+    # game = simple_env(1)[0]
+    # end = False
+    # state = game.reset()
+    # game.render()
+    # time.sleep(5)
 
-    rewards = np.zeros_like(rewards)[:201]
-    i = 0
-    while not end:
-        state = state.reshape(1, -1)
-        # print(state)
-        game.render()
-        qvals = model.predict(state, verbose=False)
-        act = np.argmax(qvals)
-        print(state, act, qvals)
-        state, reward, end, info = game.step(act)
-        time.sleep(0.01)
-        rewards[i] = reward
-        i += 1
+    # rewards = np.zeros_like(rewards)[:201]
+    # i = 0
+    # while not end:
+    #     state = state.reshape(1, -1)
+    #     # print(state)
+    #     game.render()
+    #     qvals = model.predict(state, verbose=False)
+    #     act = np.argmax(qvals)
+    #     print(state, act, qvals)
+    #     state, reward, end, info = game.step(act)
+    #     time.sleep(0.01)
+    #     rewards[i] = reward
+    #     i += 1
 
-    print(f"max i: {i}")
-    rewards = rewards[:i]
+    # print(f"max i: {i}")
+    # rewards = rewards[:i]
 
     plt.figure()
     plt.hist(rewards, bins=50)
